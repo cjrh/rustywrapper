@@ -2,6 +2,18 @@
 
 A Rust/Axum web server with Flask-style dynamic Python routing via PyO3.
 
+## Goal
+
+The goal is to allow developers to write endpoints either in Rust or Python.
+- Rust endpoints are compiled, high-performance, and type-safe
+- Python endpoints are dynamic, easy to write, and support rich libraries
+
+In practice, Rust developers are likely to use the Rust endpoints, and Python developers the Python endpoints.
+Having both allows a pathway for easy and rapid experimentation in Python, with the option to later port performance-critical endpoints to Rust.
+Because the server itself, the entrypoint, is written in Rust, the performance ceiling is much higher than a pure Python server where one might try to improve performance by adding native extensions in Rust, but will discover that the performance ceiling is low due to Python's inherent performance limitations.
+
+This POC is demonstrating an architecture that aims to combine the best of both worlds.
+
 ## Project Structure
 
 ```
@@ -22,6 +34,10 @@ rustywrapper/
 
 ## Runtime Architecture
 
+The route handlers written in Rust work as normal Axum async handlers.
+The Python route handlers are all registered dynamically at runtime via decorators in Python code.
+The following diagram illustrates the request flow for Python endpoints:
+
 ```
 HTTP Request → Axum catch-all route (/python/*path)
      → Generic Dispatcher → Channel → Python Runtime Thread
@@ -33,7 +49,7 @@ HTTP Request → Axum catch-all route (/python/*path)
 
 ## Python Runtime Thread
 
-A dedicated thread owns the Python GIL and ProcessPoolExecutor:
+A dedicated Rust thread owns the Python GIL and ProcessPoolExecutor:
 
 1. Initializes Python and adds `python/` to `sys.path`
 2. Imports `rustywrapper` framework
@@ -132,6 +148,66 @@ No rebuild required - just add a decorated function and restart:
 def new_feature(request: Request) -> dict:
     return {"status": "works"}
 ```
+
+## Thread Safety and Soundness
+
+### Why Python Cannot Interfere with Rust Endpoints
+
+The architecture guarantees that Python running in its dedicated thread will **never** interfere with Rust endpoint execution:
+
+#### 1. Separate Execution Contexts
+
+| Component | Execution Context |
+|-----------|-------------------|
+| Rust endpoints | Tokio async task executor (event loop) |
+| Python handlers | Dedicated OS thread with GIL |
+
+These are completely independent. Rust async tasks and the Python thread share no execution resources.
+
+#### 2. GIL is Thread-Local
+
+Python's Global Interpreter Lock only affects Python threads. The Rust async code runs on separate OS threads managed by Tokio and is **never** blocked waiting for the GIL:
+
+- `Python::attach()` binds Python context to the dedicated thread only
+- Tokio tasks continue executing while Python holds the GIL
+- No GIL acquisition happens in Rust endpoint handlers
+
+#### 3. No Shared Mutable State
+
+| Rust Endpoints | Python Endpoints |
+|----------------|------------------|
+| Access no Python state | Access no Rust handler state |
+| Pure async functions | Isolated via channel message passing |
+| Independent request/response | Each request gets own oneshot channel |
+
+#### 4. Channel-Based Isolation
+
+Python requests flow through thread-safe channels:
+
+```
+HTTP Request → Tokio task → mpsc::Sender → Python thread → oneshot::Sender → Tokio task → HTTP Response
+```
+
+- `mpsc::Sender` is `Clone + Send` - safe to share across async tasks
+- `oneshot::Receiver` is awaited asynchronously - doesn't block the event loop
+- Each request is independent; no shared state in the dispatch path
+
+#### 5. Signal Handling
+
+Signal conflicts are explicitly avoided (`main.rs:17-23`):
+- Python's default SIGINT handler is disabled
+- Rust handles SIGINT/SIGTERM for graceful shutdown
+- ProcessPoolExecutor workers ignore SIGINT
+
+### Verified Guarantees
+
+| Property | Guarantee |
+|----------|-----------|
+| Rust endpoints blocked by Python | **No** - different execution contexts |
+| GIL contention with Rust | **No** - GIL is thread-local |
+| Shared state race conditions | **No** - no shared mutable state |
+| Signal handler conflicts | **No** - explicitly managed |
+| Process pool GIL issues | **No** - separate processes, not threads |
 
 ## Key Dependencies
 

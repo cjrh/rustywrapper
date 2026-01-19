@@ -36,3 +36,15 @@ def compute_factorial(n: int) -> int:
     for i in range(2, n + 1):
         result *= i
     return result
+
+
+def slow_task(duration: float, task_id: str) -> dict:
+    """Simulate a slow task by sleeping for the specified duration.
+
+    Used for testing concurrent request handling.
+    """
+    import time
+    start = time.time()
+    time.sleep(duration)
+    elapsed = time.time() - start
+    return {"task_id": task_id, "duration": duration, "actual_elapsed": round(elapsed, 3)}

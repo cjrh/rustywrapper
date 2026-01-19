@@ -1,12 +1,29 @@
+use crossbeam_channel::{Receiver, Sender, bounded};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 use tokio::sync::oneshot;
 
+/// Shared Python state accessible by all worker threads.
+/// Contains `Py<PyAny>` handles which are thread-safe and can be used
+/// with `Python::attach()` from any thread.
+struct SharedPythonState {
+    dispatch_fn: Py<PyAny>,
+    executor: Py<PyAny>,
+}
+
+// Safety: Py<PyAny> is Send + Sync, and we only access the underlying
+// Python objects while holding the GIL via Python::attach()
+unsafe impl Send for SharedPythonState {}
+unsafe impl Sync for SharedPythonState {}
+
 pub struct PythonRuntime {
-    sender: mpsc::Sender<RuntimeMessage>,
-    thread: Option<JoinHandle<()>>,
+    sender: Sender<RuntimeMessage>,
+    workers: Vec<JoinHandle<()>>,
+    state: Arc<SharedPythonState>,
+    worker_count: usize,
 }
 
 enum RuntimeMessage {
@@ -50,11 +67,14 @@ impl std::fmt::Display for RuntimeError {
 impl std::error::Error for RuntimeError {}
 
 impl PythonRuntime {
-    pub fn new(pool_workers: usize, python_modules: &[&str]) -> Result<Self, RuntimeError> {
-        let (sender, receiver) = mpsc::channel::<RuntimeMessage>();
+    pub fn new(
+        pool_workers: usize,
+        dispatch_workers: usize,
+        python_modules: &[&str],
+    ) -> Result<Self, RuntimeError> {
         let modules: Vec<String> = python_modules.iter().map(|s| s.to_string()).collect();
 
-        // Compute absolute path to python/ directory before spawning thread
+        // Compute absolute path to python/ directory
         let python_dir = std::env::current_dir()
             .map_err(|e| RuntimeError::Python(format!("Failed to get current directory: {}", e)))?
             .join("python");
@@ -66,84 +86,133 @@ impl PythonRuntime {
 
         tracing::info!("Python module path: {}", python_dir_str);
 
-        let thread = thread::spawn(move || {
-            Self::runtime_thread(receiver, pool_workers, modules, python_dir_str);
-        });
+        // Initialize Python and create shared state (must be done with GIL)
+        let state = Python::attach(|py| {
+            Self::initialize_python(py, pool_workers, &modules, &python_dir_str)
+        })
+        .map_err(|e| RuntimeError::Python(e.to_string()))?;
+
+        let state = Arc::new(state);
+
+        // Create bounded channel for message passing
+        // Buffer size allows some queuing without blocking senders
+        let (sender, receiver) = bounded::<RuntimeMessage>(dispatch_workers * 2);
+
+        // Spawn worker threads
+        let mut workers = Vec::with_capacity(dispatch_workers);
+        for worker_id in 0..dispatch_workers {
+            let receiver = receiver.clone();
+            let state = Arc::clone(&state);
+
+            let handle = thread::Builder::new()
+                .name(format!("python-worker-{}", worker_id))
+                .spawn(move || {
+                    Self::worker_loop(worker_id, receiver, state);
+                })
+                .map_err(|e| RuntimeError::Thread(e.to_string()))?;
+
+            workers.push(handle);
+        }
+
+        tracing::info!(
+            "Started {} Python dispatch workers",
+            dispatch_workers
+        );
 
         Ok(Self {
             sender,
-            thread: Some(thread),
+            workers,
+            state,
+            worker_count: dispatch_workers,
         })
     }
 
-    fn runtime_thread(
-        receiver: mpsc::Receiver<RuntimeMessage>,
+    /// Initialize Python environment and create shared state.
+    /// Must be called with the GIL held.
+    fn initialize_python(
+        py: Python<'_>,
         pool_workers: usize,
-        python_modules: Vec<String>,
-        python_dir: String,
+        python_modules: &[String],
+        python_dir: &str,
+    ) -> PyResult<SharedPythonState> {
+        // Add python/ directory to sys.path using absolute path
+        let sys = py.import("sys")?;
+        let path = sys.getattr("path")?;
+        path.call_method1("insert", (0, python_dir))?;
+
+        // Import rustywrapper framework
+        let rustywrapper = py.import("rustywrapper")?;
+
+        // Import user modules (which registers routes via @route decorators)
+        for module_name in python_modules {
+            match py.import(module_name.as_str()) {
+                Ok(_) => tracing::info!("Loaded Python module: {}", module_name),
+                Err(e) => {
+                    tracing::error!("Failed to import {}: {}", module_name, e);
+                    e.print(py);
+                }
+            }
+        }
+
+        // Create ProcessPoolExecutor
+        let pool_workers_module = py.import("pool_workers").ok();
+        let executor = Self::create_pool(py, pool_workers, pool_workers_module.as_ref())?;
+
+        // Log registered routes
+        Self::log_routes(&rustywrapper);
+
+        // Get dispatch function
+        let dispatch_fn = rustywrapper.getattr("dispatch")?;
+
+        // Convert to Py<PyAny> for thread-safe storage
+        Ok(SharedPythonState {
+            dispatch_fn: dispatch_fn.unbind(),
+            executor: executor.unbind(),
+        })
+    }
+
+    /// Worker loop that processes messages from the channel.
+    /// Each worker acquires the GIL per request, allowing interleaving
+    /// when Python releases the GIL (e.g., during future.result() waits).
+    fn worker_loop(
+        worker_id: usize,
+        receiver: Receiver<RuntimeMessage>,
+        state: Arc<SharedPythonState>,
     ) {
-        Python::attach(|py| {
-            // Add python/ directory to sys.path using absolute path
-            let sys = py.import("sys").expect("Failed to import sys");
-            let path = sys.getattr("path").expect("Failed to get sys.path");
-            path.call_method1("insert", (0, &python_dir))
-                .expect("Failed to insert python path");
+        tracing::debug!("Python worker {} started", worker_id);
 
-            // Import rustywrapper framework
-            let rustywrapper = py
-                .import("rustywrapper")
-                .expect("Failed to import rustywrapper");
-
-            // Import user modules (which registers routes via @route decorators)
-            for module_name in &python_modules {
-                match py.import(module_name.as_str()) {
-                    Ok(_) => tracing::info!("Loaded Python module: {}", module_name),
-                    Err(e) => {
-                        tracing::error!("Failed to import {}: {}", module_name, e);
-                        e.print(py);
-                    }
+        loop {
+            match receiver.recv_timeout(Duration::from_millis(100)) {
+                Ok(RuntimeMessage::Dispatch {
+                    method,
+                    path,
+                    request_data,
+                    response_tx,
+                }) => {
+                    // Acquire GIL and process the request
+                    let result = Python::attach(|py| {
+                        let dispatch_fn = state.dispatch_fn.bind(py);
+                        let executor = state.executor.bind(py);
+                        Self::handle_dispatch(py, &dispatch_fn, &executor, method, path, request_data)
+                    });
+                    let _ = response_tx.send(result);
+                }
+                Ok(RuntimeMessage::Shutdown) => {
+                    tracing::debug!("Python worker {} received shutdown signal", worker_id);
+                    break;
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                    // No message, continue waiting
+                    continue;
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                    tracing::debug!("Python worker {} channel disconnected", worker_id);
+                    break;
                 }
             }
+        }
 
-            // Create ProcessPoolExecutor
-            let pool_workers_module = py.import("pool_workers").ok();
-            let executor = Self::create_pool(py, pool_workers, pool_workers_module.as_ref())
-                .expect("Failed to create ProcessPoolExecutor");
-
-            // Log registered routes
-            Self::log_routes(&rustywrapper);
-
-            // Get dispatch function
-            let dispatch_fn = rustywrapper
-                .getattr("dispatch")
-                .expect("Failed to get dispatch function");
-
-            // Main message loop
-            loop {
-                match receiver.recv() {
-                    Ok(RuntimeMessage::Dispatch {
-                        method,
-                        path,
-                        request_data,
-                        response_tx,
-                    }) => {
-                        let result =
-                            Self::handle_dispatch(py, &dispatch_fn, &executor, method, path, request_data);
-                        let _ = response_tx.send(result);
-                    }
-                    Ok(RuntimeMessage::Shutdown) => {
-                        tracing::info!("Python runtime received shutdown signal");
-                        Self::shutdown_pool(py, &executor);
-                        break;
-                    }
-                    Err(_) => {
-                        tracing::info!("Python runtime channel closed, shutting down");
-                        Self::shutdown_pool(py, &executor);
-                        break;
-                    }
-                }
-            }
-        });
+        tracing::debug!("Python worker {} exiting", worker_id);
     }
 
     fn create_pool<'py>(
@@ -335,17 +404,36 @@ impl PythonRuntime {
     }
 
     pub fn shutdown(&self) -> Result<(), RuntimeError> {
-        self.sender
-            .send(RuntimeMessage::Shutdown)
-            .map_err(|e| RuntimeError::ChannelSend(e.to_string()))
+        tracing::info!("Initiating Python runtime shutdown...");
+
+        // Send shutdown message to each worker
+        for i in 0..self.worker_count {
+            if let Err(e) = self.sender.send(RuntimeMessage::Shutdown) {
+                tracing::warn!("Failed to send shutdown to worker {}: {}", i, e);
+            }
+        }
+
+        // Shutdown the ProcessPoolExecutor with GIL
+        Python::attach(|py| {
+            Self::shutdown_pool(py, &self.state.executor.bind(py));
+        });
+
+        Ok(())
     }
 }
 
 impl Drop for PythonRuntime {
     fn drop(&mut self) {
-        let _ = self.sender.send(RuntimeMessage::Shutdown);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        // Send shutdown to all workers
+        for _ in 0..self.worker_count {
+            let _ = self.sender.send(RuntimeMessage::Shutdown);
+        }
+
+        // Join all worker threads
+        for handle in self.workers.drain(..) {
+            if let Err(e) = handle.join() {
+                tracing::error!("Worker thread panicked: {:?}", e);
+            }
         }
     }
 }

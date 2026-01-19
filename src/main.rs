@@ -25,8 +25,10 @@ async fn main() {
     // Python modules to import (registers their routes via @route decorators)
     let python_modules = &["endpoints", "pool_handlers"];
 
+    // pool_workers: number of ProcessPoolExecutor workers for CPU-bound Python tasks
+    // dispatch_workers: number of Rust threads that can dispatch to Python concurrently
     let runtime = Arc::new(
-        PythonRuntime::new(4, python_modules).expect("Failed to initialize Python runtime"),
+        PythonRuntime::new(4, 4, python_modules).expect("Failed to initialize Python runtime"),
     );
     let runtime_for_shutdown = Arc::clone(&runtime);
 
