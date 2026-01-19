@@ -1,0 +1,9 @@
+[project]
+name = "rustywrapper"
+version = "0.1.0"
+description = "Python endpoints for RustyWrapper POC"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.uv]
+dev-dependencies = []
