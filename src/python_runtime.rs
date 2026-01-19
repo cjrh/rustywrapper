@@ -54,8 +54,20 @@ impl PythonRuntime {
         let (sender, receiver) = mpsc::channel::<RuntimeMessage>();
         let modules: Vec<String> = python_modules.iter().map(|s| s.to_string()).collect();
 
+        // Compute absolute path to python/ directory before spawning thread
+        let python_dir = std::env::current_dir()
+            .map_err(|e| RuntimeError::Python(format!("Failed to get current directory: {}", e)))?
+            .join("python");
+
+        let python_dir_str = python_dir
+            .to_str()
+            .ok_or_else(|| RuntimeError::Python("Python path contains invalid UTF-8".to_string()))?
+            .to_string();
+
+        tracing::info!("Python module path: {}", python_dir_str);
+
         let thread = thread::spawn(move || {
-            Self::runtime_thread(receiver, pool_workers, modules);
+            Self::runtime_thread(receiver, pool_workers, modules, python_dir_str);
         });
 
         Ok(Self {
@@ -68,12 +80,13 @@ impl PythonRuntime {
         receiver: mpsc::Receiver<RuntimeMessage>,
         pool_workers: usize,
         python_modules: Vec<String>,
+        python_dir: String,
     ) {
         Python::attach(|py| {
-            // Add python/ to sys.path
+            // Add python/ directory to sys.path using absolute path
             let sys = py.import("sys").expect("Failed to import sys");
             let path = sys.getattr("path").expect("Failed to get sys.path");
-            path.call_method1("insert", (0, "python"))
+            path.call_method1("insert", (0, &python_dir))
                 .expect("Failed to insert python path");
 
             // Import rustywrapper framework

@@ -11,20 +11,19 @@ Requirements:
 """
 
 import signal
-from typing import List
 
 
 def init_worker():
     """Initialize worker process to ignore SIGINT (handled by main process)."""
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    _ = signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
-def compute_squares(numbers: List[int]) -> List[int]:
+def compute_squares(numbers: list[int]) -> list[int]:
     """Compute the square of each number in the input list."""
     return [n * n for n in numbers]
 
 
-def compute_sum(numbers: List[int]) -> int:
+def compute_sum(numbers: list[int]) -> int:
     """Compute the sum of all numbers in the input list."""
     return sum(numbers)
 

@@ -7,3 +7,8 @@ dependencies = []
 
 [tool.uv]
 dev-dependencies = []
+
+[tool.basedpyright]
+# Tell the type checker that python/ is a source root
+extraPaths = ["python"]
+pythonVersion = "3.12"
