@@ -4,6 +4,7 @@ RustyWrapper - Flask-style Python routing framework for Rust/Axum integration.
 Provides decorator-based route registration with path parameter extraction,
 fully dynamic routing at runtime with no build step required.
 """
+
 import re
 from typing import Dict, Any, List, Optional, Callable, override, TypedDict
 from concurrent.futures import ProcessPoolExecutor
@@ -26,12 +27,12 @@ class Request:
     """Request object containing all HTTP request data."""
 
     def __init__(self, data: dict):
-        self.path_params: dict[str, Any] = data.get('path_params', {})
-        self.query_params: dict[str, str] = data.get('query_params', {})
-        self.headers: dict[str, str] = data.get('headers', {})
-        self.body: Any | None = data.get('body')
-        self.method: str = data.get('method', 'GET')
-        self.path: str = data.get('path', '/')
+        self.path_params: dict[str, Any] = data.get("path_params", {})
+        self.query_params: dict[str, str] = data.get("query_params", {})
+        self.headers: dict[str, str] = data.get("headers", {})
+        self.body: Any | None = data.get("body")
+        self.method: str = data.get("method", "GET")
+        self.path: str = data.get("path", "/")
 
     @override
     def __repr__(self) -> str:
@@ -62,66 +63,69 @@ def route(path: str, methods: list[str] | None = None, use_process_pool: bool = 
             return {"result": future.result()}
     """
     if methods is None:
-        methods = ['GET']
+        methods = ["GET"]
 
     def decorator(fn: Callable):
         pattern, param_names, param_types = _compile_path_pattern(path)
         for method in methods:
-            _route_registry.append({
-                'pattern': pattern,
-                'path': path,
-                'method': method.upper(),
-                'handler': fn,
-                'use_process_pool': use_process_pool,
-                'param_names': param_names,
-                'param_types': param_types,
-            })
+            _route_registry.append(
+                {
+                    "pattern": pattern,
+                    "path": path,
+                    "method": method.upper(),
+                    "handler": fn,
+                    "use_process_pool": use_process_pool,
+                    "param_names": param_names,
+                    "param_types": param_types,
+                }
+            )
         return fn
+
     return decorator
 
 
-def _compile_path_pattern(path: str) -> tuple:
+def _compile_path_pattern(path: str) -> tuple[re.Pattern, list[str], dict[str, type]]:
     """
     Convert Flask-style path to regex pattern.
 
     /users/<int:id> → regex pattern, ['id'], {'id': int}
     /items/<name>   → regex pattern, ['name'], {'name': str}
     """
-    param_names = []
-    param_types = {}
+    param_names: list[str] = []
+    param_types: dict[str, type] = {}
 
     def replace_param(match):
         type_hint = match.group(1)
         name = match.group(2)
         param_names.append(name)
 
-        if type_hint == 'int':
+        if type_hint == "int":
             param_types[name] = int
-            return r'(?P<' + name + r'>[0-9]+)'
-        elif type_hint == 'float':
+            return r"(?P<" + name + r">[0-9]+)"
+        elif type_hint == "float":
             param_types[name] = float
-            return r'(?P<' + name + r'>[0-9.]+)'
+            return r"(?P<" + name + r">[0-9.]+)"
         else:  # str or no type hint
             param_types[name] = str
-            return r'(?P<' + name + r'>[^/]+)'
+            return r"(?P<" + name + r">[^/]+)"
 
     # Match <type:name> or <name>
-    pattern = re.sub(r'<(?:(\w+):)?(\w+)>', replace_param, path)
-    pattern = '^' + pattern + '$'
+    pattern = re.sub(r"<(?:(\w+):)?(\w+)>", replace_param, path)
+    pattern = "^" + pattern + "$"
     return re.compile(pattern), param_names, param_types
 
 
-def _match_route(method: str, path: str) -> Optional[tuple]:
+def _match_route(method: str, path: str) -> tuple[RouteInfo, dict] | None:
     """Find matching route and extract path params."""
     for route_info in _route_registry:
-        if route_info['method'] != method.upper():
+        if route_info["method"] != method.upper():
             continue
-        match = route_info['pattern'].match(path)
+        match = route_info["pattern"].match(path)
         if match:
             # Convert params to declared types
             params = {}
             for name, value in match.groupdict().items():
-                converter = route_info['param_types'].get(name, str)
+                converter = route_info["param_types"].get(name, str)
                 try:
                     params[name] = converter(value)
                 except (ValueError, TypeError):
@@ -131,8 +135,9 @@ def _match_route(method: str, path: str) -> Optional[tuple]:
     return None
 
 
-def dispatch(method: str, path: str, request_data: dict,
-             pool: ProcessPoolExecutor = None) -> dict:
+def dispatch(
+    method: str, path: str, request_data: dict, pool: ProcessPoolExecutor = None
+) -> dict:
     """
     Main dispatcher - matches path and calls handler.
 
@@ -153,25 +158,25 @@ def dispatch(method: str, path: str, request_data: dict,
             return {
                 "success": False,
                 "code": 404,
-                "error": f"No route for {method} {path}"
+                "error": f"No route for {method} {path}",
             }
 
         route_info, path_params = result
 
         # Build request object with extracted path params
-        request_data['path_params'] = path_params
-        request_data['method'] = method
-        request_data['path'] = path
+        request_data["path_params"] = path_params
+        request_data["method"] = method
+        request_data["path"] = path
         request = Request(request_data)
 
-        handler = route_info['handler']
+        handler = route_info["handler"]
 
-        if route_info['use_process_pool']:
+        if route_info["use_process_pool"]:
             if pool is None:
                 return {
                     "success": False,
                     "code": 500,
-                    "error": "ProcessPoolExecutor required but not available"
+                    "error": "ProcessPoolExecutor required but not available",
                 }
             response = handler(request, pool)
         else:
@@ -181,11 +186,12 @@ def dispatch(method: str, path: str, request_data: dict,
 
     except Exception as e:
         import traceback
+
         return {
             "success": False,
             "code": 500,
             "error": str(e),
-            "traceback": traceback.format_exc()
+            "traceback": traceback.format_exc(),
         }
 
 
@@ -193,10 +199,10 @@ def list_routes() -> list[dict[str, str | bool]]:
     """Return list of registered routes (for debugging/logging)."""
     return [
         {
-            "method": r['method'],
-            "path": r['path'],
-            "handler": r['handler'].__name__,
-            "use_process_pool": r['use_process_pool']
+            "method": r["method"],
+            "path": r["path"],
+            "handler": r["handler"].__name__,
+            "use_process_pool": r["use_process_pool"],
         }
         for r in _route_registry
     ]
