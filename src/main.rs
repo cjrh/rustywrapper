@@ -1,10 +1,10 @@
-mod python_handlers;
-mod python_pool;
+mod dispatcher;
+mod python_runtime;
 mod rust_handlers;
 
-use axum::{routing::get, routing::post, Router};
+use axum::{routing::any, routing::get, routing::post, Router};
+use python_runtime::PythonRuntime;
 use pyo3::prelude::*;
-use python_pool::PyProcessPool;
 use std::sync::Arc;
 use tokio::signal;
 
@@ -22,23 +22,21 @@ async fn main() {
         signal_mod.call_method1("signal", (sigint, sig_dfl)).unwrap();
     });
 
-    let pool = Arc::new(PyProcessPool::new(4).expect("Failed to create Python process pool"));
-    let pool_for_shutdown = Arc::clone(&pool);
+    // Python modules to import (registers their routes via @route decorators)
+    let python_modules = &["endpoints", "pool_handlers"];
+
+    let runtime = Arc::new(
+        PythonRuntime::new(4, python_modules).expect("Failed to initialize Python runtime"),
+    );
+    let runtime_for_shutdown = Arc::clone(&runtime);
 
     let app = Router::new()
+        // Pure Rust routes
         .route("/rust/hello", get(rust_handlers::hello))
         .route("/rust/echo", post(rust_handlers::echo))
-        .route("/python/hello", get(python_handlers::hello))
-        .route("/python/process", post(python_handlers::process))
-        .route(
-            "/python/pool/squares",
-            get(python_handlers::pool_squares),
-        )
-        .route(
-            "/python/pool/compute",
-            post(python_handlers::pool_compute),
-        )
-        .with_state(pool);
+        // Catch-all for Python routes - delegates path matching to Python
+        .route("/python/{*path}", any(dispatcher::handle_python_request))
+        .with_state(runtime);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     tracing::info!("Server listening on http://0.0.0.0:3000");
@@ -48,9 +46,9 @@ async fn main() {
         .await
         .unwrap();
 
-    tracing::info!("Shutting down Python process pool...");
-    if let Err(e) = pool_for_shutdown.shutdown() {
-        tracing::error!("Error shutting down pool: {}", e);
+    tracing::info!("Shutting down Python runtime...");
+    if let Err(e) = runtime_for_shutdown.shutdown() {
+        tracing::error!("Error shutting down runtime: {}", e);
     }
     tracing::info!("Shutdown complete");
 }
