@@ -10,7 +10,13 @@ Requirements:
 - Suitable for heavy data processing (numpy, pandas, scikit-learn)
 """
 
+import signal
 from typing import List
+
+
+def init_worker():
+    """Initialize worker process to ignore SIGINT (handled by main process)."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
 def compute_squares(numbers: List[int]) -> List[int]:
