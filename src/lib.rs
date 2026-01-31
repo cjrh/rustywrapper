@@ -63,6 +63,30 @@
 //!     future = pool.submit(heavy_computation, request.body)
 //!     return {"result": future.result()}
 //! ```
+//!
+//! Async handlers are also supported:
+//!
+//! ```python
+//! import asyncio
+//! from snaxum import route, Request
+//!
+//! @route('/python/async/hello', methods=['GET'])
+//! async def async_hello(request: Request) -> dict:
+//!     return {"message": "Hello from async Python!"}
+//!
+//! @route('/python/async/sleep', methods=['GET'])
+//! async def async_sleep(request: Request) -> dict:
+//!     duration = float(request.query_params.get('duration', '1.0'))
+//!     await asyncio.sleep(duration)
+//!     return {"slept": duration}
+//!
+//! @route('/python/async/compute', methods=['POST'], use_process_pool=True)
+//! async def async_compute(request: Request, pool) -> dict:
+//!     # CPU-bound work in async handler
+//!     loop = asyncio.get_event_loop()
+//!     result = await loop.run_in_executor(pool, heavy_work, request.body)
+//!     return {"result": result}
+//! ```
 
 mod config;
 mod dispatcher;

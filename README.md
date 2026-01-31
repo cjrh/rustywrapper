@@ -75,6 +75,46 @@ def pool_compute(request: Request, pool: ProcessPoolExecutor) -> dict[str, int]:
     return {"squares": future.result()}
 ```
 
+Async handlers are also supported - just use `async def`:
+
+```python
+# ./python/async_endpoints.py
+import asyncio
+from snaxum import route, Request
+
+@route('/python/async/hello', methods=['GET'])
+async def async_hello(request: Request) -> dict:
+    """Async handlers run in a dedicated asyncio event loop."""
+    return {"message": "Hello from async Python!"}
+
+@route('/python/async/sleep', methods=['GET'])
+async def async_sleep(request: Request) -> dict:
+    """Non-blocking sleep - doesn't block other requests."""
+    duration = float(request.query_params.get('duration', '1.0'))
+    await asyncio.sleep(duration)
+    return {"slept": duration}
+
+@route('/python/async/concurrent', methods=['GET'])
+async def async_concurrent(request: Request) -> dict:
+    """Run multiple operations concurrently."""
+    async def fetch(name: str) -> dict:
+        await asyncio.sleep(1.0)
+        return {"name": name}
+
+    # All three run concurrently - total time ~1s, not 3s
+    results = await asyncio.gather(
+        fetch("a"), fetch("b"), fetch("c")
+    )
+    return {"results": list(results)}
+
+@route('/python/async/compute', methods=['POST'], use_process_pool=True)
+async def async_compute(request: Request, pool: ProcessPoolExecutor) -> dict:
+    """CPU-bound work in async handler using process pool."""
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(pool, compute_squares, request.body)
+    return {"result": result}
+```
+
 - See the `example/` directory for a full working example.
 - Routes can go in any python file in `./python/`
 - All Python endpoints are registered dynamically at runtime via the `@route` decorator.
@@ -233,6 +273,27 @@ def compute(request: Request, pool: ProcessPoolExecutor) -> dict:
 - True parallelism across cores via separate processes
 - Workers ignore SIGINT (main process handles shutdown)
 - Use for: CPU-bound work (numpy, pandas, ML inference)
+
+### Mode 3: Async Handlers
+
+```python
+@route('/python/async/io', methods=['GET'])
+async def async_io(request: Request) -> dict:
+    await asyncio.sleep(1.0)  # Non-blocking
+    return {"waited": 1.0}
+
+@route('/python/async/compute', methods=['POST'], use_process_pool=True)
+async def async_compute(request: Request, pool: ProcessPoolExecutor) -> dict:
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(pool, heavy_work, request.body)
+    return {"result": result}
+```
+
+- Handlers use `async def` - automatically detected and routed to async runtime
+- Runs in dedicated asyncio event loop thread
+- Supports thousands of concurrent requests without blocking workers
+- Use `use_process_pool=True` + `run_in_executor()` for CPU-bound work in async handlers
+- Use for: high-latency I/O, concurrent operations, websocket-style patterns
 
 ## Flask-Style Routing
 

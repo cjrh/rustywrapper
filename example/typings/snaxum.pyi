@@ -32,8 +32,8 @@ def route(
     Args:
         path: Flask-style path pattern (e.g., '/users/<int:id>')
         methods: List of HTTP methods (default: ['GET'])
-        use_process_pool: If True, sync handler receives ProcessPoolExecutor as second arg.
-            For async handlers, use get_process_pool() and run_in_executor() instead.
+        use_process_pool: If True, handler receives ProcessPoolExecutor as second arg.
+            Works for both sync and async handlers.
 
     Examples:
         @route('/hello', methods=['GET'])
@@ -54,11 +54,9 @@ def route(
             await asyncio.sleep(1.0)
             return {"waited": 1.0}
 
-        @route('/async/compute', methods=['POST'])
-        async def async_compute(request: Request) -> dict:
-            from async_runtime import get_process_pool
+        @route('/async/compute', methods=['POST'], use_process_pool=True)
+        async def async_compute(request: Request, pool: ProcessPoolExecutor) -> dict:
             loop = asyncio.get_event_loop()
-            pool = get_process_pool()
             result = await loop.run_in_executor(pool, heavy_work, request.body)
             return {"result": result}
     """
@@ -109,7 +107,7 @@ async def dispatch_async(
         method: HTTP method (GET, POST, etc.)
         path: Full request path (e.g., '/python/async/io')
         request_data: Dict with query_params, headers, body
-        pool: Optional ProcessPoolExecutor (available via get_process_pool())
+        pool: Optional ProcessPoolExecutor for pool-enabled handlers
 
     Returns:
         Dict with success/code/data/error fields

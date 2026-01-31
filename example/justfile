@@ -70,7 +70,7 @@ test-async-concurrency:
     #!/usr/bin/env bash
     set -euo pipefail
     # Set a local variable for the number of concurrent requests
-    num_requests=10
+    num_requests=1000
     echo "Testing async concurrent request handling..."
     echo "Sending $num_requests async requests that each sleep 1 second..."
     echo ""

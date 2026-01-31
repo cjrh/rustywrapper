@@ -7,6 +7,7 @@ thousands of concurrent requests without blocking Rust worker threads.
 
 import asyncio
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from snaxum import route, Request
 
 
@@ -66,8 +67,8 @@ async def async_concurrent(request: Request) -> dict:
     }
 
 
-@route('/python/async/compute', methods=['POST'])
-async def async_compute(request: Request) -> dict:
+@route('/python/async/compute', methods=['POST'], use_process_pool=True)
+async def async_compute(request: Request, pool: ProcessPoolExecutor) -> dict:
     """
     Demonstrates CPU-bound work in async handler using ProcessPoolExecutor.
 
@@ -82,22 +83,10 @@ async def async_compute(request: Request) -> dict:
              -H "Content-Type: application/json" \\
              -d '{"count": 1000000}'
     """
-    from async_runtime import get_process_pool
-
     count = request.body.get('count', 100000) if request.body else 100000
 
-    # Get the process pool and run CPU-bound work in it
+    # Run CPU-bound work in the process pool
     loop = asyncio.get_event_loop()
-    pool = get_process_pool()
-
-    if pool is None:
-        return {
-            "success": False,
-            "error": "ProcessPoolExecutor not available"
-        }
-
-    # Define CPU-bound function (must be at module level for pickling)
-    # We use a lambda wrapper here for simplicity
     result = await loop.run_in_executor(pool, _cpu_bound_work, count)
 
     return {

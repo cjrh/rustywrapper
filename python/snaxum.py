@@ -53,7 +53,6 @@ def route(path: str, methods: list[str] | None = None, use_process_pool: bool = 
         path: Flask-style path pattern (e.g., '/users/<int:id>')
         methods: List of HTTP methods (default: ['GET'])
         use_process_pool: If True, handler receives ProcessPoolExecutor as second arg.
-            For async handlers, use get_process_pool() and run_in_executor() instead.
 
     Examples:
         @route('/hello', methods=['GET'])
@@ -74,11 +73,9 @@ def route(path: str, methods: list[str] | None = None, use_process_pool: bool = 
             await asyncio.sleep(1.0)
             return {"waited": 1.0}
 
-        @route('/async/compute', methods=['POST'])
-        async def async_compute(request: Request) -> dict:
-            from async_runtime import get_process_pool
+        @route('/async/compute', methods=['POST'], use_process_pool=True)
+        async def async_compute(request: Request, pool: ProcessPoolExecutor) -> dict:
             loop = asyncio.get_event_loop()
-            pool = get_process_pool()
             result = await loop.run_in_executor(pool, heavy_work, request.body)
             return {"result": result}
     """
@@ -229,7 +226,7 @@ async def dispatch_async(
         method: HTTP method (GET, POST, etc.)
         path: Full request path (e.g., '/python/async/io')
         request_data: Dict with query_params, headers, body
-        pool: Optional ProcessPoolExecutor (available via get_process_pool())
+        pool: Optional ProcessPoolExecutor for pool-enabled handlers
 
     Returns:
         Dict with success/code/data/error fields
@@ -253,8 +250,17 @@ async def dispatch_async(
 
         handler = route_info["handler"]
 
-        # Async handlers don't receive pool directly - they use get_process_pool()
-        response = await handler(request)
+        # Check if handler needs the pool (same as sync dispatch)
+        if route_info["use_process_pool"]:
+            if pool is None:
+                return {
+                    "success": False,
+                    "code": 500,
+                    "error": "ProcessPoolExecutor required but not available",
+                }
+            response = await handler(request, pool)
+        else:
+            response = await handler(request)
 
         return {"success": True, "data": response}
 
