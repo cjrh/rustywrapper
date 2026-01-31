@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 Now you can add python endpoints in files in `./python/`:
 
 ```python
-# python/endpoints.py
+# ./python/endpoints.py
 import sys
 import polars as pl
 from snaxum import route, Request
@@ -82,12 +82,17 @@ def pool_compute(request: Request, pool: ProcessPoolExecutor) -> dict[str, int]:
 
 ## Goal
 
-The goal is to allow developers to write HTTP endpoints either in Rust or Python.
+The goal is to allow developers to write HTTP endpoints either in Rust or Python,
+for the Axum webserver:
+
 - Rust endpoints are compiled, high-performance, and type-safe
 - Python endpoints are dynamic, easy to write, and support rich libraries
 
-In practice, Rust developers are likely to use the Rust endpoints, and Python developers the Python endpoints.
+In practice, Rust-focused developers are likely to use the Rust endpoints, and Python developers the Python endpoints.
 Having both allows a pathway for easy and rapid experimentation in Python, with the option to later port performance-critical endpoints to Rust.
+A very typical use-case is that researchers and data scientists want to quickly prototype web APIs in Python, using libraries like Pandas, NumPy, or machine learning frameworks.
+If an endpoint becomes performance-critical, it can be re-written in Rust later, by Rust experts, while having access to the working reference implementation in Python right there in the same server codebase.
+
 Because the server itself, the entrypoint, is written in Rust, the performance ceiling is much higher than a pure Python server where one might try to improve performance by adding native extensions in Rust, but will discover that the performance ceiling is low due to Python's inherent performance limitations.
 
 This POC is demonstrating an architecture that aims to combine the best of both worlds.
