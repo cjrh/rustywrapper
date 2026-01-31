@@ -9,7 +9,7 @@ A Rust/Axum web server with Flask-style dynamic Python routing via PyO3.
 
 You add this to your own Axum server to enable Python endpoints:
 
-```
+```rust
 use axum::{routing::any, Router};
 use snaxum::prelude::*;
 use std::sync::Arc;
