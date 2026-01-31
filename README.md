@@ -1,7 +1,114 @@
 > [!WARNING]
 > This is a research-level hobby project in alpha. It is not suitable for production use or any serious application.
 
-# Snaxum Architecture
+# Snaxum
+
+A Rust/Axum web server with Flask-style dynamic Python routing via PyO3.
+
+## Quickstart
+
+You add this to your own Axum server to enable Python endpoints:
+
+```
+use axum::{routing::any, Router};
+use snaxum::prelude::*;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize Python
+    pyo3::Python::initialize();
+
+    // Configure the Python runtime
+    let config = SnaxumConfig::builder()
+        .python_dir("./python")
+        .module("endpoints")
+        .module("pool_handlers")
+        .pool_workers(4)
+        .dispatch_workers(4)
+        .build()?;
+
+    let runtime = Arc::new(PythonRuntime::with_config(config)?);
+
+    let app = Router::new()
+        .route("/python/{*path}", any(handle_python_request))
+        .with_state(runtime);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
+}
+
+```
+
+Now you can add python endpoints in files in `./python/`:
+
+```python
+# python/endpoints.py
+import sys
+import polars as pl
+from snaxum import route, Request
+
+@route('/python/hello', methods=['GET'])
+def hello(request: Request) -> dict:
+    """Return a greeting with Python version info."""
+    return {
+        "message": "Hello from Python",
+        "version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    }
+
+@route('/python/users/<int:user_id>', methods=['GET'])
+def get_user(request: Request) -> dict:
+    """Get a user by ID - demonstrates path parameter extraction."""
+    user_id = request.path_params['user_id']  # Already converted to int
+    return {"user_id": user_id, "name": f"User {user_id}"}
+
+def compute_squares(numbers: list[int]) -> list[int]:
+    return [n * n for n in numbers]
+
+@route('/python/pool/compute', methods=['POST'], use_process_pool=True)
+def pool_compute(request: Request, pool: ProcessPoolExecutor) -> dict[str, int]:
+    """Compute squares of numbers using the process pool (POST with body)."""
+    numbers = body.get('numbers', [])
+    future = pool.submit(compute_squares, numbers)
+    return {"squares": future.result()}
+```
+
+- See the `example/` directory for a full working example.
+- Routes can go in any python file in `./python/`
+- All Python endpoints are registered dynamically at runtime via the `@route` decorator.
+- Virtual environments are supported for dependency management.
+
+## Goal
+
+The goal is to allow developers to write HTTP endpoints either in Rust or Python.
+- Rust endpoints are compiled, high-performance, and type-safe
+- Python endpoints are dynamic, easy to write, and support rich libraries
+
+In practice, Rust developers are likely to use the Rust endpoints, and Python developers the Python endpoints.
+Having both allows a pathway for easy and rapid experimentation in Python, with the option to later port performance-critical endpoints to Rust.
+Because the server itself, the entrypoint, is written in Rust, the performance ceiling is much higher than a pure Python server where one might try to improve performance by adding native extensions in Rust, but will discover that the performance ceiling is low due to Python's inherent performance limitations.
+
+This POC is demonstrating an architecture that aims to combine the best of both worlds.
+
+## Project Structure
+
+```
+snaxum/
+├── src/
+│   ├── main.rs              # Server setup, signal handling
+│   ├── rust_handlers.rs     # Pure Rust endpoints
+│   ├── python_runtime.rs    # Python thread with channel communication
+│   └── dispatcher.rs        # Catch-all handler for /python/*
+├── python/
+│   ├── snaxum.py      # Framework: @route decorator, Request, dispatch
+│   ├── endpoints.py         # In-thread Python handlers
+│   ├── pool_handlers.py     # Process pool handlers
+│   └── pool_workers.py      # Process pool worker functions
+├── Cargo.toml
+└── pyproject.toml
+```
 
 ## Developer Setup
 
@@ -65,37 +172,6 @@ ENV PYTHONPATH=/app/.venv/lib/python3.12/site-packages
 
 ---
 
-A Rust/Axum web server with Flask-style dynamic Python routing via PyO3.
-
-## Goal
-
-The goal is to allow developers to write HTTP endpoints either in Rust or Python.
-- Rust endpoints are compiled, high-performance, and type-safe
-- Python endpoints are dynamic, easy to write, and support rich libraries
-
-In practice, Rust developers are likely to use the Rust endpoints, and Python developers the Python endpoints.
-Having both allows a pathway for easy and rapid experimentation in Python, with the option to later port performance-critical endpoints to Rust.
-Because the server itself, the entrypoint, is written in Rust, the performance ceiling is much higher than a pure Python server where one might try to improve performance by adding native extensions in Rust, but will discover that the performance ceiling is low due to Python's inherent performance limitations.
-
-This POC is demonstrating an architecture that aims to combine the best of both worlds.
-
-## Project Structure
-
-```
-snaxum/
-├── src/
-│   ├── main.rs              # Server setup, signal handling
-│   ├── rust_handlers.rs     # Pure Rust endpoints
-│   ├── python_runtime.rs    # Python thread with channel communication
-│   └── dispatcher.rs        # Catch-all handler for /python/*
-├── python/
-│   ├── snaxum.py      # Framework: @route decorator, Request, dispatch
-│   ├── endpoints.py         # In-thread Python handlers
-│   ├── pool_handlers.py     # Process pool handlers
-│   └── pool_workers.py      # Process pool worker functions
-├── Cargo.toml
-└── pyproject.toml
-```
 
 ## Runtime Architecture
 
