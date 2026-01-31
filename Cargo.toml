@@ -8,7 +8,7 @@ readme = "README.md"
 repository = "https://github.com/your-username/rustywrapper"
 keywords = ["python", "axum", "pyo3", "web", "routing"]
 categories = ["web-programming", "api-bindings"]
-exclude = ["example/"]
+exclude = ["example/", "CLAUDE.md"]
 
 [lib]
 name = "rustywrapper"
