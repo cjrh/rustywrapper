@@ -39,5 +39,6 @@ setup: venv sync
     @echo "Development environment ready!"
 
 # Build the library
-build:
+build: venv
+    PYO3_PYTHON={{venv_python}} cargo build --lib
     cargo build --lib

@@ -6,6 +6,7 @@ The GIL is held for the duration of each request.
 """
 
 import sys
+import polars as pl
 from rustywrapper import route, Request
 
 
@@ -57,3 +58,14 @@ def echo(request: Request) -> dict:
         "query_params": request.query_params,
         "body": request.body,
     }
+
+
+@route('/python/polars-demo', methods=['GET'])
+def polars_demo(request: Request) -> dict:
+    """Demonstrate polars DataFrame creation and serialization."""
+    df = pl.DataFrame({
+        "name": ["Alice", "Bob", "Charlie"],
+        "age": [25, 30, 35],
+        "city": ["New York", "London", "Paris"]
+    })
+    return df.to_dict(as_series=False)
