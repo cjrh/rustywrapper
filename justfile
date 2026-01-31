@@ -4,6 +4,10 @@
 venv_dir := justfile_directory() / ".venv"
 venv_python := venv_dir / "bin/python"
 
+# Export environment variables for PyO3 and Python paths
+export PYO3_PYTHON := venv_python
+export PYTHONPATH := shell(venv_python + ' -c "import site; print(site.getsitepackages()[0])"')
+
 @default:
     just --list
 
@@ -36,17 +40,16 @@ setup: venv sync
     @echo "Run 'just serve' to start the server"
 
 # Start the server (uses venv Python for PyO3)
-# PYTHONPATH adds venv site-packages so embedded Python can find installed packages
 serve:
-    PYTHONPATH=$({{venv_python}} -c "import site; print(site.getsitepackages()[0])") \
-    PYO3_PYTHON={{venv_python}} cargo run
+    cargo run
 
 # Build the project (uses venv Python for PyO3)
 build:
-    PYO3_PYTHON={{venv_python}} cargo build
+    cargo build
 
 # Test all endpoints (server must be running)
-test-all: test-rust test-python test-pool test-concurrency
+test-all: test-rust test-python test-pool test-concurrency \
+    test-python-polars
 
 # Test Rust endpoints
 test-rust:
@@ -63,6 +66,9 @@ test-python:
     curl -s -X POST http://localhost:3000/python/process \
         -H "Content-Type: application/json" \
         -d '{"data":"hello"}' | jq
+
+# Test python endpoints with a venv
+test-python-polars:
     curl -s http://localhost:3000/python/polars-demo | jq
 
 # Test Python process pool endpoints
