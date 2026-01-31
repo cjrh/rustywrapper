@@ -1,3 +1,6 @@
+> [!WARNING]
+> This is a research-level hobby project in alpha. It is not suitable for production use or any serious application.
+
 # RustyWrapper Architecture
 
 A Rust/Axum web server with Flask-style dynamic Python routing via PyO3.
