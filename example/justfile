@@ -43,7 +43,7 @@ serve: venv sync
 build: venv sync
     PYO3_PYTHON={{venv_python}} cargo build
 
-test-all: test-rust test-python test-pool test-concurrency
+test-all: test-rust test-python test-pool test-concurrency test-python-polars
 
 test-rust:
     @echo "Testing Rust endpoints..."
