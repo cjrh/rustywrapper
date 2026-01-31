@@ -35,7 +35,9 @@ This project uses **system Python** for the venv (required for PyO3 runtime link
 
 > **Why system Python?** PyO3 needs `libpython` in a standard library path at runtime. System Python's libraries are in `/usr/lib64/`, which is already in the linker search path. uv-managed Python installations keep their libraries in non-standard locations.
 
-The `just serve` and `just build` commands automatically configure PyO3 to use the `.venv` Python via the `PYO3_PYTHON` environment variable.
+The `just serve` command automatically configures:
+- `PYO3_PYTHON` - points PyO3 to the venv's Python interpreter
+- `PYTHONPATH` - adds the venv's site-packages so embedded Python can import installed packages
 
 ### Adding Python Dependencies
 
@@ -47,9 +49,10 @@ The `just serve` and `just build` commands automatically configure PyO3 to use t
 
 For production, the deployment system must:
 
-1. Create a Python 3.10+ virtual environment
+1. Create a Python 3.10+ virtual environment (with system Python for libpython access)
 2. Install dependencies from `pyproject.toml` (or use `uv.lock` for reproducible builds)
-3. Set `PYO3_PYTHON` to point to the venv's Python interpreter when running the binary
+3. Set `PYO3_PYTHON` to point to the venv's Python interpreter
+4. Set `PYTHONPATH` to the venv's site-packages directory
 
 Example Dockerfile pattern:
 ```dockerfile
@@ -57,6 +60,7 @@ Example Dockerfile pattern:
 RUN python3 -m venv /app/.venv
 RUN uv sync --frozen
 ENV PYO3_PYTHON=/app/.venv/bin/python
+ENV PYTHONPATH=/app/.venv/lib/python3.12/site-packages
 ```
 
 ---
@@ -194,6 +198,7 @@ class Request:
 | `GET /python/users/<int:id>` | `endpoints.get_user` | In-thread |
 | `GET /python/items/<name>` | `endpoints.get_item` | In-thread |
 | `GET /python/echo` | `endpoints.echo` | In-thread |
+| `GET /python/polars-demo` | `endpoints.polars_demo` | In-thread |
 | `GET /python/pool/squares` | `pool_handlers.pool_squares` | Process pool |
 | `POST /python/pool/compute` | `pool_handlers.pool_compute` | Process pool |
 | `POST /python/pool/sum` | `pool_handlers.pool_sum` | Process pool |
