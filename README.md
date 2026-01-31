@@ -3,11 +3,69 @@
 
 # RustyWrapper Architecture
 
+## Developer Setup
+
+### Prerequisites
+
+- Rust (via rustup)
+- Python 3.10+ (system install with shared library in standard path)
+- uv (Python package manager): `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- just (command runner): Available via your package manager
+
+### Quick Start
+
+```bash
+# Create venv and install dependencies
+just setup
+
+# Start the server
+just serve
+
+# Run tests (in another terminal, while server is running)
+just test-all
+```
+
+### Python Environment Details
+
+This project uses **system Python** for the venv (required for PyO3 runtime linking) and **uv** for package management:
+
+- **Create venv**: `just venv` (uses `/usr/bin/python3 -m venv`)
+- **Sync dependencies**: `just sync` (or `uv sync`)
+- **Lock dependencies**: `just lock` (or `uv lock`)
+
+> **Why system Python?** PyO3 needs `libpython` in a standard library path at runtime. System Python's libraries are in `/usr/lib64/`, which is already in the linker search path. uv-managed Python installations keep their libraries in non-standard locations.
+
+The `just serve` and `just build` commands automatically configure PyO3 to use the `.venv` Python via the `PYO3_PYTHON` environment variable.
+
+### Adding Python Dependencies
+
+1. Add the dependency to `pyproject.toml` under `[project.dependencies]`
+2. Run `just lock` to update `uv.lock`
+3. Run `just sync` to install
+
+### Production Deployment
+
+For production, the deployment system must:
+
+1. Create a Python 3.10+ virtual environment
+2. Install dependencies from `pyproject.toml` (or use `uv.lock` for reproducible builds)
+3. Set `PYO3_PYTHON` to point to the venv's Python interpreter when running the binary
+
+Example Dockerfile pattern:
+```dockerfile
+# Use system Python for venv (libpython must be in standard path)
+RUN python3 -m venv /app/.venv
+RUN uv sync --frozen
+ENV PYO3_PYTHON=/app/.venv/bin/python
+```
+
+---
+
 A Rust/Axum web server with Flask-style dynamic Python routing via PyO3.
 
 ## Goal
 
-The goal is to allow developers to write endpoints either in Rust or Python.
+The goal is to allow developers to write HTTP endpoints either in Rust or Python.
 - Rust endpoints are compiled, high-performance, and type-safe
 - Python endpoints are dynamic, easy to write, and support rich libraries
 
