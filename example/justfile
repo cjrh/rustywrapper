@@ -43,7 +43,7 @@ serve: venv sync
 build: venv sync
     PYO3_PYTHON={{venv_python}} cargo build
 
-test-all: test-rust test-python test-pool test-concurrency test-python-polars
+test-all: test-rust test-python test-async test-async-concurrency test-pool test-concurrency test-python-polars
 
 test-rust:
     @echo "Testing Rust endpoints..."
@@ -59,6 +59,49 @@ test-python:
         -H "Content-Type: application/json" \
         -d '{"data":"hello"}' | jq
 
+test-async:
+    @echo "Testing Python async endpoints..."
+    curl -s http://localhost:3000/python/async/hello | jq
+    curl -s "http://localhost:3000/python/async/sleep?duration=0.5" | jq
+    curl -s http://localhost:3000/python/async/concurrent | jq
+    curl -s "http://localhost:3000/python/async/timeout?timeout=2&delay=1" | jq
+
+test-async-concurrency:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Set a local variable for the number of concurrent requests
+    num_requests=10
+    echo "Testing async concurrent request handling..."
+    echo "Sending $num_requests async requests that each sleep 1 second..."
+    echo ""
+
+    start_time=$(date +%s.%N)
+
+    # Send 10 concurrent async requests
+    for i in {1..$num_requests}; do
+        curl -s "http://localhost:3000/python/async/sleep?duration=1" > /tmp/async_task$i.json &
+    done
+
+    # Wait for all to complete
+    echo "Waiting..."
+    date
+    wait
+    echo "...Done."
+    date
+
+    end_time=$(date +%s.%N)
+    elapsed=$(echo "$end_time - $start_time" | bc)
+
+    echo "Total wall-clock time: ${elapsed}s"
+
+    # Check if concurrent (should be ~1s for 10x1s tasks running concurrently)
+    if (( $(echo "$elapsed < 2.5" | bc -l) )); then
+        echo "✓ PASS: Async requests processed concurrently (< 2.5s for $num_requests requests)"
+    else
+        echo "✗ FAIL: Async requests not concurrent (expected < 2.5s, got ${elapsed}s)"
+        exit 1
+    fi
+
 test-python-polars:
     curl -s http://localhost:3000/python/polars-demo | jq
 
@@ -72,30 +115,29 @@ test-pool:
 test-concurrency:
     #!/usr/bin/env bash
     set -euo pipefail
+    num_requests=4
     echo "Testing concurrent request handling..."
-    echo "Sending 4 requests that each sleep 1 second..."
+    echo "Sending $num_requests requests that each sleep 1 second..."
     echo ""
 
     start_time=$(date +%s.%N)
 
-    # Send 4 concurrent requests
-    curl -s "http://localhost:3000/python/pool/slow?duration=1&task_id=1" > /tmp/task1.json &
-    pid1=$!
-    curl -s "http://localhost:3000/python/pool/slow?duration=1&task_id=2" > /tmp/task2.json &
-    pid2=$!
-    curl -s "http://localhost:3000/python/pool/slow?duration=1&task_id=3" > /tmp/task3.json &
-    pid3=$!
-    curl -s "http://localhost:3000/python/pool/slow?duration=1&task_id=4" > /tmp/task4.json &
-    pid4=$!
+    # Send concurrent requests
+    for i in $(seq 1 "$num_requests"); do
+        # curl -s "http://localhost:3000/python/async/sleep?duration=1" > /tmp/async_task$i.json &
+        curl -s "http://localhost:3000/python/pool/slow?duration=1&task_id=$i" > "/tmp/task${i}.json" &
+    done
 
     # Wait for all to complete
-    wait $pid1 $pid2 $pid3 $pid4
+    echo "Waiting..."
+    wait
+    echo "...Done."
 
     end_time=$(date +%s.%N)
     elapsed=$(echo "$end_time - $start_time" | bc)
 
     echo "Results:"
-    for i in 1 2 3 4; do
+    for i in $(seq 1 "$num_requests"); do
         echo "  Task $i: $(jq -c . /tmp/task$i.json)"
     done
     echo ""

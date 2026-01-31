@@ -3,8 +3,13 @@ Snaxum - Flask-style Python routing framework for Rust/Axum integration.
 
 Provides decorator-based route registration with path parameter extraction,
 fully dynamic routing at runtime with no build step required.
+
+Supports both sync and async handlers:
+    - Sync handlers: Run in Rust dispatch worker threads
+    - Async handlers: Run in a dedicated asyncio event loop thread
 """
 
+import inspect
 import re
 from typing import Dict, Any, List, Optional, Callable, override, TypedDict
 from concurrent.futures import ProcessPoolExecutor
@@ -16,6 +21,7 @@ class RouteInfo(TypedDict):
     method: str
     handler: Callable
     use_process_pool: bool
+    is_async: bool
     param_names: list[str]
     param_types: dict[str, type]
 
@@ -46,7 +52,8 @@ def route(path: str, methods: list[str] | None = None, use_process_pool: bool = 
     Args:
         path: Flask-style path pattern (e.g., '/users/<int:id>')
         methods: List of HTTP methods (default: ['GET'])
-        use_process_pool: If True, handler receives ProcessPoolExecutor as second arg
+        use_process_pool: If True, handler receives ProcessPoolExecutor as second arg.
+            For async handlers, use get_process_pool() and run_in_executor() instead.
 
     Examples:
         @route('/hello', methods=['GET'])
@@ -61,12 +68,26 @@ def route(path: str, methods: list[str] | None = None, use_process_pool: bool = 
         def compute(request: Request, pool: ProcessPoolExecutor) -> dict:
             future = pool.submit(heavy_work, request.body)
             return {"result": future.result()}
+
+        @route('/async/io', methods=['GET'])
+        async def async_io(request: Request) -> dict:
+            await asyncio.sleep(1.0)
+            return {"waited": 1.0}
+
+        @route('/async/compute', methods=['POST'])
+        async def async_compute(request: Request) -> dict:
+            from async_runtime import get_process_pool
+            loop = asyncio.get_event_loop()
+            pool = get_process_pool()
+            result = await loop.run_in_executor(pool, heavy_work, request.body)
+            return {"result": result}
     """
     if methods is None:
         methods = ["GET"]
 
     def decorator(fn: Callable):
         pattern, param_names, param_types = _compile_path_pattern(path)
+        is_async = inspect.iscoroutinefunction(fn)
         for method in methods:
             _route_registry.append(
                 {
@@ -75,6 +96,7 @@ def route(path: str, methods: list[str] | None = None, use_process_pool: bool = 
                     "method": method.upper(),
                     "handler": fn,
                     "use_process_pool": use_process_pool,
+                    "is_async": is_async,
                     "param_names": param_names,
                     "param_types": param_types,
                 }
@@ -139,9 +161,9 @@ def dispatch(
     method: str, path: str, request_data: dict, pool: ProcessPoolExecutor = None
 ) -> dict:
     """
-    Main dispatcher - matches path and calls handler.
+    Main dispatcher for sync handlers - matches path and calls handler.
 
-    Called from Rust for every incoming request to /python/*.
+    Called from Rust for every incoming sync request to /python/*.
 
     Args:
         method: HTTP method (GET, POST, etc.)
@@ -195,6 +217,82 @@ def dispatch(
         }
 
 
+async def dispatch_async(
+    method: str, path: str, request_data: dict, pool: ProcessPoolExecutor = None
+) -> dict:
+    """
+    Async dispatcher - matches path and calls async handler.
+
+    Called from the async runtime for async requests.
+
+    Args:
+        method: HTTP method (GET, POST, etc.)
+        path: Full request path (e.g., '/python/async/io')
+        request_data: Dict with query_params, headers, body
+        pool: Optional ProcessPoolExecutor (available via get_process_pool())
+
+    Returns:
+        Dict with success/code/data/error fields
+    """
+    try:
+        result = _match_route(method, path)
+        if not result:
+            return {
+                "success": False,
+                "code": 404,
+                "error": f"No route for {method} {path}",
+            }
+
+        route_info, path_params = result
+
+        # Build request object with extracted path params
+        request_data["path_params"] = path_params
+        request_data["method"] = method
+        request_data["path"] = path
+        request = Request(request_data)
+
+        handler = route_info["handler"]
+
+        # Async handlers don't receive pool directly - they use get_process_pool()
+        response = await handler(request)
+
+        return {"success": True, "data": response}
+
+    except Exception as e:
+        import traceback
+
+        return {
+            "success": False,
+            "code": 500,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
+
+def get_route_info(method: str, path: str) -> dict | None:
+    """
+    Get route metadata for a given method and path.
+
+    Called from Rust to determine if a route is async before dispatching.
+
+    Args:
+        method: HTTP method (GET, POST, etc.)
+        path: Full request path
+
+    Returns:
+        Dict with is_async and use_process_pool fields, or None if no route found.
+    """
+    result = _match_route(method, path)
+    if not result:
+        return None
+
+    route_info, _ = result
+    return {
+        "is_async": route_info["is_async"],
+        "use_process_pool": route_info["use_process_pool"],
+    }
+
+
 def list_routes() -> list[dict[str, str | bool]]:
     """Return list of registered routes (for debugging/logging)."""
     return [
@@ -203,9 +301,15 @@ def list_routes() -> list[dict[str, str | bool]]:
             "path": r["path"],
             "handler": r["handler"].__name__,
             "use_process_pool": r["use_process_pool"],
+            "is_async": r["is_async"],
         }
         for r in _route_registry
     ]
+
+
+def has_async_routes() -> bool:
+    """Check if any registered routes are async."""
+    return any(r["is_async"] for r in _route_registry)
 
 
 def clear_routes():

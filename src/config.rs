@@ -23,6 +23,11 @@ pub struct SnaxumConfig {
     /// If true, disables the Python SIGINT handler setup.
     /// Useful when embedding in applications that handle signals themselves.
     pub disable_signal_handler: bool,
+
+    /// Enable async Python handlers.
+    /// When true, a dedicated asyncio event loop thread is started for async handlers.
+    /// Defaults to true if any async routes are registered.
+    pub enable_async: bool,
 }
 
 impl SnaxumConfig {
@@ -40,6 +45,7 @@ impl Default for SnaxumConfig {
             pool_workers: 4,
             dispatch_workers: 4,
             disable_signal_handler: false,
+            enable_async: true,
         }
     }
 }
@@ -52,6 +58,7 @@ pub struct SnaxumConfigBuilder {
     pool_workers: Option<usize>,
     dispatch_workers: Option<usize>,
     disable_signal_handler: bool,
+    enable_async: Option<bool>,
 }
 
 impl SnaxumConfigBuilder {
@@ -115,6 +122,19 @@ impl SnaxumConfigBuilder {
         self
     }
 
+    /// Enable or disable async Python handlers.
+    ///
+    /// When enabled, a dedicated asyncio event loop thread is started for
+    /// handling async Python handlers. This allows thousands of concurrent
+    /// async requests without blocking Rust worker threads.
+    ///
+    /// Default is true. Set to false if you don't have any async handlers
+    /// and want to avoid the overhead of the async thread.
+    pub fn enable_async(mut self, enable: bool) -> Self {
+        self.enable_async = Some(enable);
+        self
+    }
+
     /// Build the configuration, validating all settings.
     pub fn build(self) -> Result<SnaxumConfig, ConfigError> {
         let python_dir = self.resolve_python_dir()?;
@@ -141,6 +161,7 @@ impl SnaxumConfigBuilder {
             pool_workers,
             dispatch_workers,
             disable_signal_handler: self.disable_signal_handler,
+            enable_async: self.enable_async.unwrap_or(true),
         })
     }
 

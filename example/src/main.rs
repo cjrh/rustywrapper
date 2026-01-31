@@ -6,6 +6,11 @@
 //! - curl http://localhost:3000/rust/hello
 //! - curl http://localhost:3000/python/hello
 //! - curl -X POST http://localhost:3000/python/process -d '{"data":"test"}'
+//!
+//! Async Python handlers:
+//! - curl http://localhost:3000/python/async/hello
+//! - curl "http://localhost:3000/python/async/sleep?duration=1.5"
+//! - curl http://localhost:3000/python/async/concurrent
 
 use axum::{
     http::StatusCode,
@@ -30,8 +35,10 @@ async fn main() {
         .python_dir("python")
         .module("endpoints")
         .module("pool_handlers")
+        .module("async_endpoints")
         .pool_workers(4)
         .dispatch_workers(4)
+        .enable_async(true)
         .build()
         .expect("Failed to build config");
 

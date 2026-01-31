@@ -43,4 +43,8 @@ pub enum RuntimeError {
     /// Configuration error.
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
+
+    /// Async dispatch is not enabled.
+    #[error("Async dispatch is not enabled. Enable it with SnaxumConfig::enable_async(true)")]
+    AsyncNotEnabled,
 }

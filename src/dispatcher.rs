@@ -64,10 +64,23 @@ pub async fn handle_python_request(
         "body": body_json,
     });
 
-    match runtime
-        .dispatch(method.as_str(), &full_path, request_data)
-        .await
-    {
+    // Check if the route is async and dispatch accordingly
+    let is_async = runtime.is_async_enabled()
+        && runtime
+            .is_route_async(method.as_str(), &full_path)
+            .unwrap_or(false);
+
+    let dispatch_result = if is_async {
+        runtime
+            .dispatch_async(method.as_str(), &full_path, request_data)
+            .await
+    } else {
+        runtime
+            .dispatch(method.as_str(), &full_path, request_data)
+            .await
+    };
+
+    match dispatch_result {
         Ok(result) if result.success => (
             StatusCode::OK,
             Json(result.data.unwrap_or(serde_json::Value::Null)),

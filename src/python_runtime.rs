@@ -3,8 +3,10 @@ use crate::error::RuntimeError;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyModule};
+use std::collections::HashMap;
 use std::ffi::CString;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tokio::sync::oneshot;
@@ -14,20 +16,39 @@ use tokio::sync::oneshot;
 /// with `Python::attach()` from any thread.
 struct SharedPythonState {
     dispatch_fn: Py<PyAny>,
+    get_route_info_fn: Py<PyAny>,
     executor: Py<PyAny>,
+}
+
+/// Shared state for the async Python runtime.
+struct AsyncPythonState {
+    submit_async_fn: Py<PyAny>,
+    poll_responses_fn: Py<PyAny>,
+    shutdown_async_fn: Py<PyAny>,
 }
 
 // Safety: Py<PyAny> is Send + Sync, and we only access the underlying
 // Python objects while holding the GIL via Python::attach()
 unsafe impl Send for SharedPythonState {}
 unsafe impl Sync for SharedPythonState {}
+unsafe impl Send for AsyncPythonState {}
+unsafe impl Sync for AsyncPythonState {}
 
 /// The Python runtime that manages Python execution threads and message passing.
 pub struct PythonRuntime {
+    // Sync dispatch
     sender: Sender<RuntimeMessage>,
     workers: Vec<JoinHandle<()>>,
     state: Arc<SharedPythonState>,
     worker_count: usize,
+
+    // Async dispatch
+    async_enabled: bool,
+    async_sender: Option<Sender<AsyncRuntimeMessage>>,
+    async_worker: Option<JoinHandle<()>>,
+    async_state: Option<Arc<AsyncPythonState>>,
+    async_pending: Arc<Mutex<HashMap<u64, oneshot::Sender<DispatchResult>>>>,
+    async_request_id: AtomicU64,
 }
 
 enum RuntimeMessage {
@@ -36,6 +57,16 @@ enum RuntimeMessage {
         path: String,
         request_data: serde_json::Value,
         response_tx: oneshot::Sender<DispatchResult>,
+    },
+    Shutdown,
+}
+
+enum AsyncRuntimeMessage {
+    Dispatch {
+        request_id: u64,
+        method: String,
+        path: String,
+        request_data: serde_json::Value,
     },
     Shutdown,
 }
@@ -128,11 +159,27 @@ impl PythonRuntime {
             config.dispatch_workers
         );
 
+        // Initialize async runtime if enabled
+        let async_pending = Arc::new(Mutex::new(HashMap::new()));
+        let (async_enabled, async_sender, async_worker, async_state) = if config.enable_async {
+            let (async_state, async_sender, async_worker) =
+                Self::initialize_async_runtime(&state, Arc::clone(&async_pending))?;
+            (true, Some(async_sender), Some(async_worker), Some(async_state))
+        } else {
+            (false, None, None, None)
+        };
+
         Ok(Self {
             sender,
             workers,
             state,
             worker_count: config.dispatch_workers,
+            async_enabled,
+            async_sender,
+            async_worker,
+            async_state,
+            async_pending,
+            async_request_id: AtomicU64::new(1),
         })
     }
 
@@ -223,14 +270,80 @@ impl PythonRuntime {
         // Log registered routes
         Self::log_routes(&snaxum);
 
-        // Get dispatch function
+        // Get dispatch and route info functions
         let dispatch_fn = snaxum.getattr("dispatch")?;
+        let get_route_info_fn = snaxum.getattr("get_route_info")?;
 
         // Convert to Py<PyAny> for thread-safe storage
         Ok(SharedPythonState {
             dispatch_fn: dispatch_fn.unbind(),
+            get_route_info_fn: get_route_info_fn.unbind(),
             executor: executor.unbind(),
         })
+    }
+
+    /// Initialize the async Python runtime.
+    ///
+    /// This starts the async_runtime.py module and returns the state needed
+    /// for async dispatch.
+    fn initialize_async_runtime(
+        state: &Arc<SharedPythonState>,
+        pending: Arc<Mutex<HashMap<u64, oneshot::Sender<DispatchResult>>>>,
+    ) -> Result<(Arc<AsyncPythonState>, Sender<AsyncRuntimeMessage>, JoinHandle<()>), RuntimeError>
+    {
+        // Embed the async_runtime module at compile time
+        let async_runtime_code = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/python/async_runtime.py"
+        ));
+
+        // Initialize async runtime in Python
+        let async_state = Python::attach(|py| {
+            // Load async_runtime module
+            let async_runtime = PyModule::from_code(
+                py,
+                CString::new(async_runtime_code)
+                    .expect("async_runtime.py contains null byte")
+                    .as_c_str(),
+                c"async_runtime.py",
+                c"async_runtime",
+            )?;
+
+            // Start the async thread with the pool
+            let start_fn = async_runtime.getattr("start_async_runtime")?;
+            let executor = state.executor.bind(py);
+            start_fn.call1((executor,))?;
+
+            tracing::info!("Started Python async runtime thread");
+
+            // Get async functions
+            let submit_async_fn = async_runtime.getattr("submit_async")?;
+            let poll_responses_fn = async_runtime.getattr("poll_responses")?;
+            let shutdown_async_fn = async_runtime.getattr("shutdown_async_runtime")?;
+
+            Ok::<_, PyErr>(AsyncPythonState {
+                submit_async_fn: submit_async_fn.unbind(),
+                poll_responses_fn: poll_responses_fn.unbind(),
+                shutdown_async_fn: shutdown_async_fn.unbind(),
+            })
+        })
+        .map_err(|e| RuntimeError::Python(e.to_string()))?;
+
+        // Create async channel
+        let (async_sender, async_receiver) = bounded::<AsyncRuntimeMessage>(1000);
+
+        // Spawn async worker thread - both the worker and the runtime struct share the state
+        let async_state_arc = Arc::new(async_state);
+        let async_state_for_worker = Arc::clone(&async_state_arc);
+
+        let async_worker = thread::Builder::new()
+            .name("python-async-worker".to_string())
+            .spawn(move || {
+                Self::async_worker_loop(async_receiver, async_state_for_worker, pending);
+            })
+            .map_err(|e| RuntimeError::Thread(e.to_string()))?;
+
+        Ok((async_state_arc, async_sender, async_worker))
     }
 
     /// Worker loop that processes messages from the channel.
@@ -252,6 +365,7 @@ impl PythonRuntime {
                     response_tx,
                 }) => {
                     // Acquire GIL and process the request
+                    #[allow(clippy::needless_borrow)]
                     let result = Python::attach(|py| {
                         let dispatch_fn = state.dispatch_fn.bind(py);
                         let executor = state.executor.bind(py);
@@ -275,6 +389,98 @@ impl PythonRuntime {
         }
 
         tracing::debug!("Python worker {} exiting", worker_id);
+    }
+
+    /// Async worker loop that polls Python for completed async responses and
+    /// submits new async requests.
+    fn async_worker_loop(
+        receiver: Receiver<AsyncRuntimeMessage>,
+        state: Arc<AsyncPythonState>,
+        pending: Arc<Mutex<HashMap<u64, oneshot::Sender<DispatchResult>>>>,
+    ) {
+        tracing::debug!("Python async worker started");
+
+        loop {
+            // 1. Poll for completed responses (brief GIL acquisition)
+            Python::attach(|py| {
+                let poll_fn = state.poll_responses_fn.bind(py);
+                match poll_fn.call0() {
+                    Ok(responses) => {
+                        // responses is a list of (request_id, response_dict) tuples
+                        if let Ok(list) = responses.extract::<Vec<(u64, Bound<'_, PyAny>)>>() {
+                            for (request_id, response) in list {
+                                let result = Self::parse_dispatch_response(py, &response);
+                                if let Some(sender) = pending.lock().unwrap().remove(&request_id) {
+                                    let _ = sender.send(result);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Error polling async responses: {}", e);
+                    }
+                }
+            });
+
+            // 2. Check for new requests or shutdown
+            match receiver.recv_timeout(Duration::from_millis(10)) {
+                Ok(AsyncRuntimeMessage::Dispatch {
+                    request_id,
+                    method,
+                    path,
+                    request_data,
+                }) => {
+                    // Submit to Python async queue
+                    Python::attach(|py| {
+                        let submit_fn = state.submit_async_fn.bind(py);
+                        let data_dict = match Self::json_to_pydict(py, &request_data) {
+                            Ok(d) => d,
+                            Err(e) => {
+                                tracing::error!("Failed to convert request data: {}", e);
+                                // Send error response
+                                if let Some(sender) = pending.lock().unwrap().remove(&request_id) {
+                                    let _ = sender.send(DispatchResult {
+                                        success: false,
+                                        code: 500,
+                                        data: None,
+                                        error: Some(format!("Failed to convert request data: {}", e)),
+                                    });
+                                }
+                                return;
+                            }
+                        };
+
+                        if let Err(e) =
+                            submit_fn.call1((request_id, &method, &path, data_dict))
+                        {
+                            tracing::error!("Failed to submit async request: {}", e);
+                            if let Some(sender) = pending.lock().unwrap().remove(&request_id) {
+                                let _ = sender.send(DispatchResult {
+                                    success: false,
+                                    code: 500,
+                                    data: None,
+                                    error: Some(format!("Failed to submit async request: {}", e)),
+                                });
+                            }
+                        }
+                    });
+                }
+                Ok(AsyncRuntimeMessage::Shutdown) => {
+                    tracing::debug!("Python async worker received shutdown signal");
+                    break;
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                    // No message, continue polling
+                    continue;
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                    tracing::debug!("Python async worker channel disconnected");
+                    break;
+                }
+            }
+        }
+
+        tracing::debug!("Python async worker exiting");
     }
 
     fn create_pool<'py>(
@@ -325,18 +531,27 @@ impl PythonRuntime {
                 if let Ok(routes_list) = routes.extract::<Bound<'_, PyList>>() {
                     tracing::info!("Registered Python routes:");
                     for route in routes_list.iter() {
-                        if let (Ok(method), Ok(path), Ok(handler), Ok(pool)) = (
+                        if let (Ok(method), Ok(path), Ok(handler), Ok(pool), Ok(is_async)) = (
                             route.get_item("method"),
                             route.get_item("path"),
                             route.get_item("handler"),
                             route.get_item("use_process_pool"),
+                            route.get_item("is_async"),
                         ) {
                             let pool_marker = if pool.is_truthy().unwrap_or(false) {
                                 " [pool]"
                             } else {
                                 ""
                             };
-                            tracing::info!("  {} {} -> {}(){}", method, path, handler, pool_marker);
+                            let async_marker = if is_async.is_truthy().unwrap_or(false) {
+                                " [async]"
+                            } else {
+                                ""
+                            };
+                            tracing::info!(
+                                "  {} {} -> {}(){}{}",
+                                method, path, handler, pool_marker, async_marker
+                            );
                         }
                     }
                 }
@@ -444,7 +659,7 @@ impl PythonRuntime {
         serde_json::from_str(&rust_str).map_err(|e| e.to_string())
     }
 
-    /// Dispatch a request to Python.
+    /// Dispatch a sync request to Python.
     ///
     /// This sends the request to a worker thread which will execute the
     /// appropriate Python handler.
@@ -469,6 +684,78 @@ impl PythonRuntime {
             .map_err(|e| RuntimeError::ChannelRecv(e.to_string()))
     }
 
+    /// Dispatch an async request to Python.
+    ///
+    /// This sends the request to the async Python thread which runs an asyncio
+    /// event loop. The request will be handled concurrently with other async
+    /// requests without blocking worker threads.
+    ///
+    /// Returns an error if async is not enabled in the runtime configuration.
+    pub async fn dispatch_async(
+        &self,
+        method: &str,
+        path: &str,
+        request_data: serde_json::Value,
+    ) -> Result<DispatchResult, RuntimeError> {
+        if !self.async_enabled {
+            return Err(RuntimeError::AsyncNotEnabled);
+        }
+
+        let async_sender = self
+            .async_sender
+            .as_ref()
+            .ok_or(RuntimeError::AsyncNotEnabled)?;
+
+        let request_id = self.async_request_id.fetch_add(1, Ordering::SeqCst);
+        let (tx, rx) = oneshot::channel();
+
+        // Store the response sender
+        self.async_pending.lock().unwrap().insert(request_id, tx);
+
+        // Send to async channel
+        async_sender
+            .send(AsyncRuntimeMessage::Dispatch {
+                request_id,
+                method: method.to_string(),
+                path: path.to_string(),
+                request_data,
+            })
+            .map_err(|e: crossbeam_channel::SendError<AsyncRuntimeMessage>| {
+                RuntimeError::ChannelSend(e.to_string())
+            })?;
+
+        rx.await
+            .map_err(|e| RuntimeError::ChannelRecv(e.to_string()))
+    }
+
+    /// Check if a route is async.
+    ///
+    /// Returns Some(true) if the route is async, Some(false) if sync,
+    /// or None if the route doesn't exist.
+    pub fn is_route_async(&self, method: &str, path: &str) -> Option<bool> {
+        Python::attach(|py| {
+            let get_route_info = self.state.get_route_info_fn.bind(py);
+            match get_route_info.call1((method, path)) {
+                Ok(result) => {
+                    if result.is_none() {
+                        None
+                    } else {
+                        result
+                            .get_item("is_async")
+                            .ok()
+                            .and_then(|v| v.extract::<bool>().ok())
+                    }
+                }
+                Err(_) => None,
+            }
+        })
+    }
+
+    /// Check if async dispatch is enabled.
+    pub fn is_async_enabled(&self) -> bool {
+        self.async_enabled
+    }
+
     /// Shutdown the Python runtime gracefully.
     ///
     /// This sends shutdown signals to all worker threads and shuts down
@@ -476,14 +763,32 @@ impl PythonRuntime {
     pub fn shutdown(&self) -> Result<(), RuntimeError> {
         tracing::info!("Initiating Python runtime shutdown...");
 
-        // Send shutdown message to each worker
+        // Send shutdown message to each sync worker
         for i in 0..self.worker_count {
             if let Err(e) = self.sender.send(RuntimeMessage::Shutdown) {
                 tracing::warn!("Failed to send shutdown to worker {}: {}", i, e);
             }
         }
 
+        // Send shutdown to async worker if enabled
+        if let Some(ref async_sender) = self.async_sender {
+            if let Err(e) = async_sender.send(AsyncRuntimeMessage::Shutdown) {
+                tracing::warn!("Failed to send shutdown to async worker: {}", e);
+            }
+        }
+
+        // Shutdown the async Python thread
+        if let Some(ref async_state) = self.async_state {
+            Python::attach(|py| {
+                let shutdown_fn = async_state.shutdown_async_fn.bind(py);
+                if let Err(e) = shutdown_fn.call0() {
+                    tracing::warn!("Failed to shutdown async Python runtime: {}", e);
+                }
+            });
+        }
+
         // Shutdown the ProcessPoolExecutor with GIL
+        #[allow(clippy::needless_borrow)]
         Python::attach(|py| {
             Self::shutdown_pool(py, &self.state.executor.bind(py));
         });
@@ -494,15 +799,27 @@ impl PythonRuntime {
 
 impl Drop for PythonRuntime {
     fn drop(&mut self) {
-        // Send shutdown to all workers
+        // Send shutdown to all sync workers
         for _ in 0..self.worker_count {
             let _ = self.sender.send(RuntimeMessage::Shutdown);
         }
 
-        // Join all worker threads
+        // Send shutdown to async worker
+        if let Some(ref async_sender) = self.async_sender {
+            let _ = async_sender.send(AsyncRuntimeMessage::Shutdown);
+        }
+
+        // Join all sync worker threads
         for handle in self.workers.drain(..) {
             if let Err(e) = handle.join() {
                 tracing::error!("Worker thread panicked: {:?}", e);
+            }
+        }
+
+        // Join async worker thread
+        if let Some(handle) = self.async_worker.take() {
+            if let Err(e) = handle.join() {
+                tracing::error!("Async worker thread panicked: {:?}", e);
             }
         }
     }
