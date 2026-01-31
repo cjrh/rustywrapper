@@ -1,0 +1,92 @@
+# Example project commands
+# Run from: example/
+
+venv_dir := justfile_directory() / ".venv"
+venv_python := venv_dir / "bin/python"
+
+export PYO3_PYTHON := venv_python
+export PYTHONPATH := shell(venv_python + ' -c "import site; print(site.getsitepackages()[0])"')
+
+@default:
+    just --list
+
+venv:
+    /usr/bin/python3 -m venv --without-pip .venv
+
+sync:
+    uv sync
+
+setup: venv sync
+    @echo "Example environment ready!"
+
+serve:
+    cargo run
+
+build:
+    cargo build
+
+test-all: test-rust test-python test-pool test-concurrency
+
+test-rust:
+    @echo "Testing Rust endpoints..."
+    curl -s http://localhost:3000/rust/hello | jq
+    curl -s -X POST http://localhost:3000/rust/echo \
+        -H "Content-Type: application/json" \
+        -d '{"name":"test"}' | jq
+
+test-python:
+    @echo "Testing Python in-thread endpoints..."
+    curl -s http://localhost:3000/python/hello | jq
+    curl -s -X POST http://localhost:3000/python/process \
+        -H "Content-Type: application/json" \
+        -d '{"data":"hello"}' | jq
+
+test-python-polars:
+    curl -s http://localhost:3000/python/polars-demo | jq
+
+test-pool:
+    @echo "Testing Python process pool endpoints..."
+    curl -s "http://localhost:3000/python/pool/squares?numbers=1,2,3,4,5" | jq
+    curl -s -X POST http://localhost:3000/python/pool/compute \
+        -H "Content-Type: application/json" \
+        -d '{"numbers":[1,2,3,4,5]}' | jq
+
+test-concurrency:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Testing concurrent request handling..."
+    echo "Sending 4 requests that each sleep 1 second..."
+    echo ""
+
+    start_time=$(date +%s.%N)
+
+    # Send 4 concurrent requests
+    curl -s "http://localhost:3000/python/pool/slow?duration=1&task_id=1" > /tmp/task1.json &
+    pid1=$!
+    curl -s "http://localhost:3000/python/pool/slow?duration=1&task_id=2" > /tmp/task2.json &
+    pid2=$!
+    curl -s "http://localhost:3000/python/pool/slow?duration=1&task_id=3" > /tmp/task3.json &
+    pid3=$!
+    curl -s "http://localhost:3000/python/pool/slow?duration=1&task_id=4" > /tmp/task4.json &
+    pid4=$!
+
+    # Wait for all to complete
+    wait $pid1 $pid2 $pid3 $pid4
+
+    end_time=$(date +%s.%N)
+    elapsed=$(echo "$end_time - $start_time" | bc)
+
+    echo "Results:"
+    for i in 1 2 3 4; do
+        echo "  Task $i: $(jq -c . /tmp/task$i.json)"
+    done
+    echo ""
+    echo "Total wall-clock time: ${elapsed}s"
+
+    # Check if concurrent (should be < 3s for 4x1s tasks)
+    if (( $(echo "$elapsed < 3.0" | bc -l) )); then
+        echo "✓ PASS: Requests processed concurrently (< 3s)"
+    else
+        echo "✗ FAIL: Requests processed sequentially (expected < 3s, got ${elapsed}s)"
+        exit 1
+    fi

@@ -1,3 +1,5 @@
+use crate::config::RustyWrapperConfig;
+use crate::error::RuntimeError;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -19,6 +21,7 @@ struct SharedPythonState {
 unsafe impl Send for SharedPythonState {}
 unsafe impl Sync for SharedPythonState {}
 
+/// The Python runtime that manages Python execution threads and message passing.
 pub struct PythonRuntime {
     sender: Sender<RuntimeMessage>,
     workers: Vec<JoinHandle<()>>,
@@ -36,59 +39,64 @@ enum RuntimeMessage {
     Shutdown,
 }
 
+/// Result of dispatching a request to Python.
 #[derive(Debug)]
 pub struct DispatchResult {
+    /// Whether the request was handled successfully.
     pub success: bool,
+    /// HTTP status code.
     pub code: u16,
+    /// Response data (if successful).
     pub data: Option<serde_json::Value>,
+    /// Error message (if failed).
     pub error: Option<String>,
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
-pub enum RuntimeError {
-    ChannelSend(String),
-    ChannelRecv(String),
-    Python(String),
-    Thread(String),
-}
-
-impl std::fmt::Display for RuntimeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RuntimeError::ChannelSend(e) => write!(f, "Channel send error: {}", e),
-            RuntimeError::ChannelRecv(e) => write!(f, "Channel receive error: {}", e),
-            RuntimeError::Python(e) => write!(f, "Python error: {}", e),
-            RuntimeError::Thread(e) => write!(f, "Thread error: {}", e),
-        }
-    }
-}
-
-impl std::error::Error for RuntimeError {}
-
 impl PythonRuntime {
-    pub fn new(
-        pool_workers: usize,
-        dispatch_workers: usize,
-        python_modules: &[&str],
-    ) -> Result<Self, RuntimeError> {
-        let modules: Vec<String> = python_modules.iter().map(|s| s.to_string()).collect();
-
-        // Compute absolute path to python/ directory
-        let python_dir = std::env::current_dir()
-            .map_err(|e| RuntimeError::Python(format!("Failed to get current directory: {}", e)))?
-            .join("python");
-
-        let python_dir_str = python_dir
+    /// Create a new Python runtime with the given configuration.
+    ///
+    /// This is the preferred way to create a `PythonRuntime`. It allows full
+    /// control over the Python environment through the configuration.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use rustywrapper::{RustyWrapperConfig, PythonRuntime};
+    ///
+    /// let config = RustyWrapperConfig::builder()
+    ///     .python_dir("./python")
+    ///     .module("endpoints")
+    ///     .pool_workers(4)
+    ///     .build()?;
+    ///
+    /// let runtime = PythonRuntime::with_config(config)?;
+    /// ```
+    pub fn with_config(config: RustyWrapperConfig) -> Result<Self, RuntimeError> {
+        let python_dir_str = config
+            .python_dir
             .to_str()
             .ok_or_else(|| RuntimeError::Python("Python path contains invalid UTF-8".to_string()))?
             .to_string();
 
         tracing::info!("Python module path: {}", python_dir_str);
 
+        // Setup signal handler if not disabled
+        if !config.disable_signal_handler {
+            Python::attach(|py| {
+                if let Err(e) = Self::setup_signal_handler(py) {
+                    tracing::warn!("Failed to setup Python signal handler: {}", e);
+                }
+            });
+        }
+
         // Initialize Python and create shared state (must be done with GIL)
         let state = Python::attach(|py| {
-            Self::initialize_python(py, pool_workers, &modules, &python_dir_str)
+            Self::initialize_python(
+                py,
+                config.pool_workers,
+                &config.modules,
+                &python_dir_str,
+            )
         })
         .map_err(|e| RuntimeError::Python(e.to_string()))?;
 
@@ -96,11 +104,11 @@ impl PythonRuntime {
 
         // Create bounded channel for message passing
         // Buffer size allows some queuing without blocking senders
-        let (sender, receiver) = bounded::<RuntimeMessage>(dispatch_workers * 2);
+        let (sender, receiver) = bounded::<RuntimeMessage>(config.dispatch_workers * 2);
 
         // Spawn worker threads
-        let mut workers = Vec::with_capacity(dispatch_workers);
-        for worker_id in 0..dispatch_workers {
+        let mut workers = Vec::with_capacity(config.dispatch_workers);
+        for worker_id in 0..config.dispatch_workers {
             let receiver = receiver.clone();
             let state = Arc::clone(&state);
 
@@ -116,15 +124,55 @@ impl PythonRuntime {
 
         tracing::info!(
             "Started {} Python dispatch workers",
-            dispatch_workers
+            config.dispatch_workers
         );
 
         Ok(Self {
             sender,
             workers,
             state,
-            worker_count: dispatch_workers,
+            worker_count: config.dispatch_workers,
         })
+    }
+
+    /// Create a new Python runtime with default configuration.
+    ///
+    /// This constructor looks for Python modules in `./python` relative to the
+    /// current working directory.
+    ///
+    /// # Deprecated
+    ///
+    /// This method is deprecated in favor of [`PythonRuntime::with_config`],
+    /// which provides more control and better error handling.
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use PythonRuntime::with_config() for better configuration control"
+    )]
+    pub fn new(
+        pool_workers: usize,
+        dispatch_workers: usize,
+        python_modules: &[&str],
+    ) -> Result<Self, RuntimeError> {
+        let config = RustyWrapperConfig::builder()
+            .python_dir("python")
+            .modules(python_modules.iter().map(|s| s.to_string()))
+            .pool_workers(pool_workers)
+            .dispatch_workers(dispatch_workers)
+            .build()
+            .map_err(RuntimeError::Config)?;
+
+        Self::with_config(config)
+    }
+
+    /// Setup Python's signal handler to use SIG_DFL for SIGINT.
+    ///
+    /// This allows Rust to handle Ctrl+C for graceful shutdown.
+    fn setup_signal_handler(py: Python<'_>) -> PyResult<()> {
+        let signal_mod = py.import("signal")?;
+        let sigint = signal_mod.getattr("SIGINT")?;
+        let sig_dfl = signal_mod.getattr("SIG_DFL")?;
+        signal_mod.call_method1("signal", (sigint, sig_dfl))?;
+        Ok(())
     }
 
     /// Initialize Python environment and create shared state.
@@ -382,6 +430,10 @@ impl PythonRuntime {
         serde_json::from_str(&rust_str).map_err(|e| e.to_string())
     }
 
+    /// Dispatch a request to Python.
+    ///
+    /// This sends the request to a worker thread which will execute the
+    /// appropriate Python handler.
     pub async fn dispatch(
         &self,
         method: &str,
@@ -403,6 +455,10 @@ impl PythonRuntime {
             .map_err(|e| RuntimeError::ChannelRecv(e.to_string()))
     }
 
+    /// Shutdown the Python runtime gracefully.
+    ///
+    /// This sends shutdown signals to all worker threads and shuts down
+    /// the ProcessPoolExecutor.
     pub fn shutdown(&self) -> Result<(), RuntimeError> {
         tracing::info!("Initiating Python runtime shutdown...");
 

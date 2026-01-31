@@ -9,6 +9,29 @@ use axum::{
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Handle incoming requests to Python routes.
+///
+/// This is the main Axum handler for the `/python/{*path}` route. It extracts
+/// request data and dispatches to the appropriate Python handler via the runtime.
+///
+/// # Example
+///
+/// ```ignore
+/// use axum::{routing::any, Router};
+/// use rustywrapper::{handle_python_request, PythonRuntime, RustyWrapperConfig};
+/// use std::sync::Arc;
+///
+/// let config = RustyWrapperConfig::builder()
+///     .python_dir("./python")
+///     .module("endpoints")
+///     .build()?;
+///
+/// let runtime = Arc::new(PythonRuntime::with_config(config)?);
+///
+/// let app = Router::new()
+///     .route("/python/{*path}", any(handle_python_request))
+///     .with_state(runtime);
+/// ```
 pub async fn handle_python_request(
     method: Method,
     State(runtime): State<Arc<PythonRuntime>>,
