@@ -8,7 +8,7 @@ The pool is passed as the second argument when use_process_pool=True.
 from concurrent.futures import ProcessPoolExecutor
 from snaxum import route, Request
 from pool_workers import compute_squares, compute_sum, compute_factorial, slow_task
-from typing import Any, TypedDict, NotRequired
+from typing import TypedDict, NotRequired
 
 
 class PoolSquaresResponse(TypedDict):
