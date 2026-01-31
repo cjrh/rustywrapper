@@ -476,36 +476,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
-name = "rustywrapper"
-version = "0.2.0"
-dependencies = [
- "axum",
- "crossbeam-channel",
- "pyo3",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tower",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "rustywrapper-example"
-version = "0.1.0"
-dependencies = [
- "axum",
- "pyo3",
- "rustywrapper",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "ryu"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -607,6 +577,36 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
+name = "snaxum"
+version = "0.2.0"
+dependencies = [
+ "axum",
+ "crossbeam-channel",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "snaxum-example"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "snaxum",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "socket2"

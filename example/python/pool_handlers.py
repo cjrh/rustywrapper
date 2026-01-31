@@ -1,12 +1,12 @@
 """
-Process pool endpoints for RustyWrapper using Flask-style decorators.
+Process pool endpoints for Snaxum using Flask-style decorators.
 
 These handlers use ProcessPoolExecutor for true CPU parallelism.
 The pool is passed as the second argument when use_process_pool=True.
 """
 
 from concurrent.futures import ProcessPoolExecutor
-from rustywrapper import route, Request
+from snaxum import route, Request
 from pool_workers import compute_squares, compute_sum, compute_factorial, slow_task
 from typing import Any, TypedDict, NotRequired
 

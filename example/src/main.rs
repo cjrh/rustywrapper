@@ -1,4 +1,4 @@
-//! Example server demonstrating RustyWrapper usage.
+//! Example server demonstrating Snaxum usage.
 //!
 //! Run with: cargo run (from example/ directory)
 //!
@@ -13,7 +13,7 @@ use axum::{
     routing::{any, get, post},
     Json, Router,
 };
-use rustywrapper::prelude::*;
+use snaxum::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -26,7 +26,7 @@ async fn main() {
     pyo3::Python::initialize();
 
     // Configure the Python runtime
-    let config = RustyWrapperConfig::builder()
+    let config = SnaxumConfig::builder()
         .python_dir("python")
         .module("endpoints")
         .module("pool_handlers")

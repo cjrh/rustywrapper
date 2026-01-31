@@ -30,8 +30,8 @@ Using an absolute path (computed from `std::env::current_dir()`) ensures imports
 
 ```bash
 # All of these work with absolute paths:
-./target/debug/rustywrapper
-cd /tmp && /path/to/rustywrapper
+./target/debug/snaxum
+cd /tmp && /path/to/snaxum
 cargo run
 ```
 
@@ -39,9 +39,9 @@ With a relative path like `"python"`, the server would only work when run from t
 
 ### Import Resolution Order
 
-When Python encounters `from rustywrapper import route`:
+When Python encounters `from snaxum import route`:
 
-1. `{project_root}/python/` (our inserted path) → finds `rustywrapper.py` ✓
+1. `{project_root}/python/` (our inserted path) → finds `snaxum.py` ✓
 2. Standard library paths (`/usr/lib/python3.x/`, etc.)
 3. Site-packages (pip-installed packages)
 
@@ -49,7 +49,7 @@ When Python encounters `from rustywrapper import route`:
 
 ```
 python/
-├── rustywrapper.py      # Framework: @route decorator, Request class, dispatch()
+├── snaxum.py      # Framework: @route decorator, Request class, dispatch()
 ├── endpoints.py         # In-thread request handlers
 ├── pool_handlers.py     # ProcessPoolExecutor-based handlers
 └── pool_workers.py      # Functions that run in worker processes
@@ -61,7 +61,7 @@ python/
 
 ```python
 # pool_handlers.py
-from rustywrapper import route, Request
+from snaxum import route, Request
 from pool_workers import compute_squares, compute_sum
 ```
 
@@ -89,13 +89,53 @@ Future versions will support:
 - Configuration via `pyproject.toml` or environment variables
 - Example integrations with numpy, scipy, and polars
 
+## Type Hints and IDE Support
+
+Since `snaxum.py` is embedded into the Rust binary at compile time, it doesn't exist as a resolvable Python module for type checkers. To enable IDE autocompletion and type checking, we use stub files.
+
+### Setup
+
+The `example/` directory includes:
+
+- `typings/snaxum.pyi` - Type stubs for the snaxum module
+- `pyrightconfig.json` - Pyright configuration pointing to the stubs
+
+### What's Provided
+
+The stub file exports type information for:
+
+- `Request` class with typed attributes (`path_params`, `query_params`, `headers`, `body`, `method`, `path`)
+- `@route` decorator with full signature and docstring
+- `dispatch()`, `list_routes()`, and `clear_routes()` functions
+
+### Verification
+
+To verify type hints are working:
+
+1. Open `example/python/endpoints.py` in VS Code
+2. Hover over `Request` - should show class with typed attributes
+3. Hover over `@route` - should show decorator signature with docstring
+4. Type `request.` and verify autocomplete shows all attributes
+5. Run `pyright example/python/` to verify no type errors
+
+### For New Projects
+
+Copy the `typings/` directory and `pyrightconfig.json` to your project:
+
+```bash
+cp -r example/typings your-project/
+cp example/pyrightconfig.json your-project/
+```
+
+Adjust paths in `pyrightconfig.json` if your Python code is in a different directory.
+
 ## Troubleshooting
 
-### "ModuleNotFoundError: No module named 'rustywrapper'"
+### "ModuleNotFoundError: No module named 'snaxum'"
 
 The server was likely started from the wrong directory, or the `python/` directory doesn't exist.
 
-**Fix**: Run from the project root, or check that `python/rustywrapper.py` exists.
+**Fix**: Run from the project root, or check that `python/snaxum.py` exists.
 
 ### "ModuleNotFoundError: No module named 'endpoints'"
 
@@ -112,7 +152,7 @@ let python_modules = &["endpoints", "pool_handlers"];  // → python/endpoints.p
 The REPL might have a different working directory or `sys.path`. The server logs its Python module path at startup:
 
 ```
-INFO rustywrapper::python_runtime: Python module path: /absolute/path/to/project/python
+INFO snaxum::python_runtime: Python module path: /absolute/path/to/project/python
 ```
 
 Verify this path is correct.

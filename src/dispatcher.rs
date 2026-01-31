@@ -18,10 +18,10 @@ use std::sync::Arc;
 ///
 /// ```ignore
 /// use axum::{routing::any, Router};
-/// use rustywrapper::{handle_python_request, PythonRuntime, RustyWrapperConfig};
+/// use snaxum::{handle_python_request, PythonRuntime, SnaxumConfig};
 /// use std::sync::Arc;
 ///
-/// let config = RustyWrapperConfig::builder()
+/// let config = SnaxumConfig::builder()
 ///     .python_dir("./python")
 ///     .module("endpoints")
 ///     .build()?;

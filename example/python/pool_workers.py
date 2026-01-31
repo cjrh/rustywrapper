@@ -1,5 +1,5 @@
 """
-Process pool worker functions for RustyWrapper.
+Process pool worker functions for Snaxum.
 
 These functions run in separate Python processes via ProcessPoolExecutor.
 They enable true parallelism for CPU-bound work across multiple cores.

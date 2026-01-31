@@ -1,6 +1,6 @@
-//! RustyWrapper - Flask-style Python routing for Rust/Axum applications.
+//! Snaxum - Flask-style Python routing for Rust/Axum applications.
 //!
-//! RustyWrapper provides a seamless way to integrate Python handlers into your
+//! Snaxum provides a seamless way to integrate Python handlers into your
 //! Axum web server. It uses a dedicated thread pool for Python execution and
 //! supports both in-thread handlers and CPU-bound work via ProcessPoolExecutor.
 //!
@@ -8,7 +8,7 @@
 //!
 //! ```ignore
 //! use axum::{routing::any, Router};
-//! use rustywrapper::prelude::*;
+//! use snaxum::prelude::*;
 //! use std::sync::Arc;
 //!
 //! #[tokio::main]
@@ -17,7 +17,7 @@
 //!     pyo3::Python::initialize();
 //!
 //!     // Configure the Python runtime
-//!     let config = RustyWrapperConfig::builder()
+//!     let config = SnaxumConfig::builder()
 //!         .python_dir("./python")
 //!         .module("endpoints")
 //!         .module("pool_handlers")
@@ -40,7 +40,7 @@
 //!
 //! # Architecture
 //!
-//! RustyWrapper uses a dedicated thread pool for Python execution:
+//! Snaxum uses a dedicated thread pool for Python execution:
 //!
 //! - **Rust endpoints** run on the Tokio async event loop
 //! - **Python endpoints** run on dedicated OS threads with channel communication
@@ -51,7 +51,7 @@
 //! In your Python handlers directory, create files like `endpoints.py`:
 //!
 //! ```python
-//! from rustywrapper import route, Request
+//! from snaxum import route, Request
 //!
 //! @route('/python/hello', methods=['GET'])
 //! def hello(request: Request) -> dict:
@@ -69,16 +69,16 @@ mod dispatcher;
 mod error;
 mod python_runtime;
 
-pub use config::{RustyWrapperConfig, RustyWrapperConfigBuilder};
+pub use config::{SnaxumConfig, SnaxumConfigBuilder};
 pub use dispatcher::handle_python_request;
 pub use error::{ConfigError, RuntimeError};
 pub use python_runtime::{DispatchResult, PythonRuntime};
 
 /// Prelude module for convenient imports.
 ///
-/// Use `use rustywrapper::prelude::*;` to import all common types.
+/// Use `use snaxum::prelude::*;` to import all common types.
 pub mod prelude {
-    pub use crate::config::{RustyWrapperConfig, RustyWrapperConfigBuilder};
+    pub use crate::config::{SnaxumConfig, SnaxumConfigBuilder};
     pub use crate::dispatcher::handle_python_request;
     pub use crate::error::{ConfigError, RuntimeError};
     pub use crate::python_runtime::{DispatchResult, PythonRuntime};

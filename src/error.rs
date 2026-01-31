@@ -1,4 +1,4 @@
-//! Error types for RustyWrapper.
+//! Error types for Snaxum.
 //!
 //! This module provides consolidated error types for configuration and runtime errors.
 

@@ -1,11 +1,11 @@
 [package]
-name = "rustywrapper-example"
+name = "snaxum-example"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [dependencies]
-rustywrapper = { path = ".." }
+snaxum = { path = ".." }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

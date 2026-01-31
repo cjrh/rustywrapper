@@ -1,13 +1,13 @@
-//! Configuration for the RustyWrapper Python runtime.
+//! Configuration for the Snaxum Python runtime.
 //!
 //! This module provides a builder pattern for configuring the Python runtime.
 
 use crate::error::ConfigError;
 use std::path::PathBuf;
 
-/// Configuration for the RustyWrapper Python runtime.
+/// Configuration for the Snaxum Python runtime.
 #[derive(Debug, Clone)]
-pub struct RustyWrapperConfig {
+pub struct SnaxumConfig {
     /// Path to the directory containing Python handlers.
     pub python_dir: PathBuf,
 
@@ -25,14 +25,14 @@ pub struct RustyWrapperConfig {
     pub disable_signal_handler: bool,
 }
 
-impl RustyWrapperConfig {
+impl SnaxumConfig {
     /// Create a new configuration builder.
-    pub fn builder() -> RustyWrapperConfigBuilder {
-        RustyWrapperConfigBuilder::new()
+    pub fn builder() -> SnaxumConfigBuilder {
+        SnaxumConfigBuilder::new()
     }
 }
 
-impl Default for RustyWrapperConfig {
+impl Default for SnaxumConfig {
     fn default() -> Self {
         Self {
             python_dir: PathBuf::from("python"),
@@ -44,9 +44,9 @@ impl Default for RustyWrapperConfig {
     }
 }
 
-/// Builder for creating a [`RustyWrapperConfig`].
+/// Builder for creating a [`SnaxumConfig`].
 #[derive(Debug, Clone, Default)]
-pub struct RustyWrapperConfigBuilder {
+pub struct SnaxumConfigBuilder {
     python_dir: Option<PathBuf>,
     modules: Vec<String>,
     pool_workers: Option<usize>,
@@ -54,7 +54,7 @@ pub struct RustyWrapperConfigBuilder {
     disable_signal_handler: bool,
 }
 
-impl RustyWrapperConfigBuilder {
+impl SnaxumConfigBuilder {
     /// Create a new configuration builder with default values.
     pub fn new() -> Self {
         Self::default()
@@ -64,7 +64,7 @@ impl RustyWrapperConfigBuilder {
     ///
     /// This path can be relative (resolved from current directory) or absolute.
     /// The directory should contain the handler modules (e.g., `endpoints.py`).
-    /// The `rustywrapper` framework module is embedded in the binary and does
+    /// The `snaxum` framework module is embedded in the binary and does
     /// not need to be present in this directory.
     pub fn python_dir<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.python_dir = Some(path.into());
@@ -107,7 +107,7 @@ impl RustyWrapperConfigBuilder {
 
     /// Disable the Python SIGINT handler setup.
     ///
-    /// By default, RustyWrapper configures Python to use SIG_DFL for SIGINT,
+    /// By default, Snaxum configures Python to use SIG_DFL for SIGINT,
     /// allowing Rust to handle Ctrl+C for graceful shutdown. Set this to true
     /// if your application handles signals differently.
     pub fn disable_signal_handler(mut self, disable: bool) -> Self {
@@ -116,7 +116,7 @@ impl RustyWrapperConfigBuilder {
     }
 
     /// Build the configuration, validating all settings.
-    pub fn build(self) -> Result<RustyWrapperConfig, ConfigError> {
+    pub fn build(self) -> Result<SnaxumConfig, ConfigError> {
         let python_dir = self.resolve_python_dir()?;
 
         // Validate pool workers
@@ -135,7 +135,7 @@ impl RustyWrapperConfigBuilder {
             ));
         }
 
-        Ok(RustyWrapperConfig {
+        Ok(SnaxumConfig {
             python_dir,
             modules: self.modules,
             pool_workers,
@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn test_builder_defaults() {
         // This test would fail without a valid python dir, but demonstrates the API
-        let builder = RustyWrapperConfig::builder()
+        let builder = SnaxumConfig::builder()
             .module("endpoints")
             .pool_workers(2)
             .dispatch_workers(2);
@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn test_zero_workers_rejected() {
         // Create a temporary test - in real tests we'd mock the filesystem
-        let result = RustyWrapperConfigBuilder::new()
+        let result = SnaxumConfigBuilder::new()
             .pool_workers(0)
             .build();
 

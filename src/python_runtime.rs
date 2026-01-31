@@ -1,4 +1,4 @@
-use crate::config::RustyWrapperConfig;
+use crate::config::SnaxumConfig;
 use crate::error::RuntimeError;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use pyo3::prelude::*;
@@ -62,9 +62,9 @@ impl PythonRuntime {
     /// # Example
     ///
     /// ```ignore
-    /// use rustywrapper::{RustyWrapperConfig, PythonRuntime};
+    /// use snaxum::{SnaxumConfig, PythonRuntime};
     ///
-    /// let config = RustyWrapperConfig::builder()
+    /// let config = SnaxumConfig::builder()
     ///     .python_dir("./python")
     ///     .module("endpoints")
     ///     .pool_workers(4)
@@ -72,7 +72,7 @@ impl PythonRuntime {
     ///
     /// let runtime = PythonRuntime::with_config(config)?;
     /// ```
-    pub fn with_config(config: RustyWrapperConfig) -> Result<Self, RuntimeError> {
+    pub fn with_config(config: SnaxumConfig) -> Result<Self, RuntimeError> {
         let python_dir_str = config
             .python_dir
             .to_str()
@@ -154,7 +154,7 @@ impl PythonRuntime {
         dispatch_workers: usize,
         python_modules: &[&str],
     ) -> Result<Self, RuntimeError> {
-        let config = RustyWrapperConfig::builder()
+        let config = SnaxumConfig::builder()
             .python_dir("python")
             .modules(python_modules.iter().map(|s| s.to_string()))
             .pool_workers(pool_workers)
@@ -189,20 +189,20 @@ impl PythonRuntime {
         let path = sys.getattr("path")?;
         path.call_method1("insert", (0, python_dir))?;
 
-        // Embed the rustywrapper framework at compile time
-        let rustywrapper_code = include_str!(concat!(
+        // Embed the snaxum framework at compile time
+        let snaxum_code = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/python/rustywrapper.py"
+            "/python/snaxum.py"
         ));
 
         // Load as a module (registers in sys.modules automatically)
-        let rustywrapper = PyModule::from_code(
+        let snaxum = PyModule::from_code(
             py,
-            CString::new(rustywrapper_code)
-                .expect("rustywrapper.py contains null byte")
+            CString::new(snaxum_code)
+                .expect("snaxum.py contains null byte")
                 .as_c_str(),
-            c"rustywrapper.py",
-            c"rustywrapper",
+            c"snaxum.py",
+            c"snaxum",
         )?;
 
         // Import user modules (which registers routes via @route decorators)
@@ -221,10 +221,10 @@ impl PythonRuntime {
         let executor = Self::create_pool(py, pool_workers, pool_workers_module.as_ref())?;
 
         // Log registered routes
-        Self::log_routes(&rustywrapper);
+        Self::log_routes(&snaxum);
 
         // Get dispatch function
-        let dispatch_fn = rustywrapper.getattr("dispatch")?;
+        let dispatch_fn = snaxum.getattr("dispatch")?;
 
         // Convert to Py<PyAny> for thread-safe storage
         Ok(SharedPythonState {
@@ -319,8 +319,8 @@ impl PythonRuntime {
         }
     }
 
-    fn log_routes(rustywrapper: &Bound<'_, PyModule>) {
-        if let Ok(list_routes) = rustywrapper.getattr("list_routes") {
+    fn log_routes(snaxum: &Bound<'_, PyModule>) {
+        if let Ok(list_routes) = snaxum.getattr("list_routes") {
             if let Ok(routes) = list_routes.call0() {
                 if let Ok(routes_list) = routes.extract::<Bound<'_, PyList>>() {
                     tracing::info!("Registered Python routes:");

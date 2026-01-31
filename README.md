@@ -1,7 +1,7 @@
 > [!WARNING]
 > This is a research-level hobby project in alpha. It is not suitable for production use or any serious application.
 
-# RustyWrapper Architecture
+# Snaxum Architecture
 
 ## Developer Setup
 
@@ -82,14 +82,14 @@ This POC is demonstrating an architecture that aims to combine the best of both 
 ## Project Structure
 
 ```
-rustywrapper/
+snaxum/
 ├── src/
 │   ├── main.rs              # Server setup, signal handling
 │   ├── rust_handlers.rs     # Pure Rust endpoints
 │   ├── python_runtime.rs    # Python thread with channel communication
 │   └── dispatcher.rs        # Catch-all handler for /python/*
 ├── python/
-│   ├── rustywrapper.py      # Framework: @route decorator, Request, dispatch
+│   ├── snaxum.py      # Framework: @route decorator, Request, dispatch
 │   ├── endpoints.py         # In-thread Python handlers
 │   ├── pool_handlers.py     # Process pool handlers
 │   └── pool_workers.py      # Process pool worker functions
@@ -106,7 +106,7 @@ The following diagram illustrates the request flow for Python endpoints:
 ```
 HTTP Request → Axum catch-all route (/python/*path)
      → Generic Dispatcher → Channel → Python Runtime Thread
-     → rustywrapper.dispatch(method, path, request_data)
+     → snaxum.dispatch(method, path, request_data)
      → Route Registry path matching → User Handler → Response
 ```
 
@@ -117,11 +117,11 @@ HTTP Request → Axum catch-all route (/python/*path)
 A dedicated Rust thread owns the Python GIL and ProcessPoolExecutor:
 
 1. Initializes Python and adds `python/` to `sys.path`
-2. Imports `rustywrapper` framework
+2. Imports `snaxum` framework
 3. Imports user modules (registers routes via `@route` decorators)
 4. Creates `ProcessPoolExecutor` with worker initializer
 5. Logs all registered routes at startup
-6. Loops on channel, calling `rustywrapper.dispatch()` for each request
+6. Loops on channel, calling `snaxum.dispatch()` for each request
 
 Communication uses `std::sync::mpsc` for thread-side and `tokio::sync::oneshot` for async responses.
 

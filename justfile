@@ -1,4 +1,4 @@
-# RustyWrapper library development commands
+# Snaxum library development commands
 
 # Absolute path to venv for PyO3
 venv_dir := justfile_directory() / ".venv"
