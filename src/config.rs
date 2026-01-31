@@ -63,7 +63,9 @@ impl RustyWrapperConfigBuilder {
     /// Set the path to the directory containing Python handlers.
     ///
     /// This path can be relative (resolved from current directory) or absolute.
-    /// The directory must contain `rustywrapper.py` and the handler modules.
+    /// The directory should contain the handler modules (e.g., `endpoints.py`).
+    /// The `rustywrapper` framework module is embedded in the binary and does
+    /// not need to be present in this directory.
     pub fn python_dir<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.python_dir = Some(path.into());
         self
@@ -167,12 +169,6 @@ impl RustyWrapperConfigBuilder {
                 "Path is not a directory: {}",
                 absolute_path.display()
             )));
-        }
-
-        // Check for rustywrapper.py
-        let framework_path = absolute_path.join("rustywrapper.py");
-        if !framework_path.exists() {
-            return Err(ConfigError::FrameworkNotFound(absolute_path));
         }
 
         Ok(absolute_path)

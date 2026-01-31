@@ -12,10 +12,6 @@ pub enum ConfigError {
     #[error("Python directory not found: {0}")]
     PythonDirNotFound(PathBuf),
 
-    /// The rustywrapper.py framework file was not found in the Python directory.
-    #[error("Framework file 'rustywrapper.py' not found in: {0}")]
-    FrameworkNotFound(PathBuf),
-
     /// Error resolving a path.
     #[error("Path resolution error: {0}")]
     PathResolution(String),

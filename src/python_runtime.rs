@@ -2,7 +2,8 @@ use crate::config::RustyWrapperConfig;
 use crate::error::RuntimeError;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::{PyDict, PyList, PyModule};
+use std::ffi::CString;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -188,8 +189,21 @@ impl PythonRuntime {
         let path = sys.getattr("path")?;
         path.call_method1("insert", (0, python_dir))?;
 
-        // Import rustywrapper framework
-        let rustywrapper = py.import("rustywrapper")?;
+        // Embed the rustywrapper framework at compile time
+        let rustywrapper_code = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/python/rustywrapper.py"
+        ));
+
+        // Load as a module (registers in sys.modules automatically)
+        let rustywrapper = PyModule::from_code(
+            py,
+            CString::new(rustywrapper_code)
+                .expect("rustywrapper.py contains null byte")
+                .as_c_str(),
+            c"rustywrapper.py",
+            c"rustywrapper",
+        )?;
 
         // Import user modules (which registers routes via @route decorators)
         for module_name in python_modules {

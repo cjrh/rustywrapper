@@ -4,8 +4,8 @@
 venv_dir := justfile_directory() / ".venv"
 venv_python := venv_dir / "bin/python"
 
-export PYO3_PYTHON := venv_python
-export PYTHONPATH := shell(venv_python + ' -c "import site; print(site.getsitepackages()[0])"')
+# export PYO3_PYTHON := venv_python
+# export PYTHONPATH := shell(venv_python + ' -c "import site; print(site.getsitepackages()[0])"')
 
 @default:
     just --list
@@ -19,11 +19,15 @@ sync:
 setup: venv sync
     @echo "Example environment ready!"
 
-serve:
-    cargo run
+serve: venv sync
+    # export PYO3_PYTHON := venv_python
+    # export PYTHONPATH := shell(venv_python + ' -c "import site; print(site.getsitepackages()[0])"')
+    PYO3_PYTHON={{venv_python}} \
+        PYTHONPATH={{shell(venv_python + ' -c "import site; print(site.getsitepackages()[0])"')}}  \
+        cargo run
 
-build:
-    cargo build
+build: venv sync
+    PYO3_PYTHON={{venv_python}} cargo build
 
 test-all: test-rust test-python test-pool test-concurrency
 
