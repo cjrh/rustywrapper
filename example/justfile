@@ -4,8 +4,10 @@
 venv_dir := justfile_directory() / ".venv"
 venv_python := venv_dir / "bin/python"
 
+python_version := shell('/usr/bin/python3 -c "import sys; print(str(sys.version_info.major) + chr(46) + str(sys.version_info.minor))"')
+
 # export PYO3_PYTHON := venv_python
-# export PYTHONPATH := shell(venv_python + ' -c "import site; print(site.getsitepackages()[0])"')
+# export PYTHONPATH := venv_dir / "lib" / ("python" + python_version) / "site-packages"
 
 @default:
     just --list
@@ -37,7 +39,7 @@ serve: venv sync
     # export PYO3_PYTHON := venv_python
     # export PYTHONPATH := shell(venv_python + ' -c "import site; print(site.getsitepackages()[0])"')
     PYO3_PYTHON={{venv_python}} \
-        PYTHONPATH={{shell(venv_python + ' -c "import site; print(site.getsitepackages()[0])"')}}  \
+        PYTHONPATH={{venv_dir / "lib" / ("python" + python_version) / "site-packages"}}  \
         cargo run
 
 build: venv sync

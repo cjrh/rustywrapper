@@ -1,11 +1,11 @@
 [package]
-name = "snaxum"
+name = "chimera"
 version = "0.2.0"
 edition = "2021"
 license = "AGPL-3.0-only"
 description = "Flask-style Python routing for Rust/Axum applications"
 readme = "README.md"
-repository = "https://github.com/your-username/snaxum"
+repository = "https://github.com/cjrh/chimera"
 keywords = ["python", "axum", "pyo3", "web", "routing"]
 categories = ["web-programming", "api-bindings"]
 exclude = ["example/", "CLAUDE.md"]

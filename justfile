@@ -6,7 +6,8 @@ venv_python := venv_dir / "bin/python"
 
 # Export environment variables for PyO3 and Python paths
 export PYO3_PYTHON := venv_python
-export PYTHONPATH := shell(venv_python + ' -c "import site; print(site.getsitepackages()[0])"')
+python_version := shell('/usr/bin/python3 -c "import sys; print(str(sys.version_info.major) + chr(46) + str(sys.version_info.minor))"')
+export PYTHONPATH := venv_dir / "lib" / ("python" + python_version) / "site-packages"
 
 @default:
     just --list
@@ -17,7 +18,7 @@ export PYTHONPATH := shell(venv_python + ' -c "import site; print(site.getsitepa
 # shared library is in a standard location. If you use a system
 # Python to create the venv, libpython nevertheless remains in a standard
 # location and at runtime the linker has no problem finding it.
-# The problem arises when you use a different pythonn distribution
+# The problem arises when you use a different python distribution
 # that does not have libpython accessible in a standard location.
 # We're using uv, which has this problem. If we used uv to create
 # the venv, then at runtime PyO3 would not be able to find libpython
@@ -28,14 +29,8 @@ export PYTHONPATH := shell(venv_python + ' -c "import site; print(site.getsitepa
 venv:
     /usr/bin/python3 -m venv --without-pip .venv
 
-sync:
-    uv sync
-
-lock:
-    uv lock
-
 # Full dev setup from scratch
-setup: venv sync
+setup: venv
     @echo "Development environment ready!"
 
 # Build the library
