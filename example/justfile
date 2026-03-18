@@ -19,7 +19,7 @@ setup: venv sync
     @echo "Example environment ready!"
 
 serve: venv sync
-    PYO3_PYTHON={{venv_python}} cargo run
+    PYO3_PYTHON={{venv_python}} VIRTUAL_ENV={{venv_dir}} cargo run
 
 build: venv sync
     PYO3_PYTHON={{venv_python}} cargo build

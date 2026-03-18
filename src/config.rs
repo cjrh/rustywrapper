@@ -84,15 +84,16 @@ impl ChimeraConfigBuilder {
         self
     }
 
-    /// Set the path to a Python virtual environment.
+    /// Override the virtual environment path.
     ///
-    /// Chimera will resolve the venv's `site-packages` directory and add it
-    /// to `sys.path` at startup, making pip-installed packages importable.
-    ///
-    /// If not set, Chimera checks the `VIRTUAL_ENV` environment variable as
-    /// a fallback. If neither is set, no venv site-packages are added.
+    /// By default, Chimera reads the `VIRTUAL_ENV` environment variable to
+    /// locate the venv and add its `site-packages` to `sys.path` at startup.
+    /// Use this method to override that with an explicit path — useful for
+    /// multi-venv setups, testing, or when environment variables aren't suitable.
     ///
     /// The path can be relative (resolved from current directory) or absolute.
+    /// If neither `.venv()` nor `VIRTUAL_ENV` is set, no venv site-packages
+    /// are added.
     pub fn venv<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.venv_path = Some(path.into());
         self

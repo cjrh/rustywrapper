@@ -84,36 +84,37 @@ def compute_squares(numbers: list[int]) -> list[int]:
 
 PyO3's `auto-initialize` embeds the Python interpreter directly in the Rust process. Unlike running `python` from a shell, this bypasses normal venv activation: no `pyvenv.cfg` is read, `sys.prefix` isn't redirected, and venv `site-packages` aren't on `sys.path`. The result is that only stdlib imports work unless the runtime explicitly adds the venv's site-packages to `sys.path`.
 
-Chimera handles this automatically when you configure a venv path.
+Chimera handles this automatically when it knows where your venv is.
 
 ### Configuration
 
-Use the `.venv()` builder method to point Chimera at your virtual environment:
+Set the `VIRTUAL_ENV` environment variable to your venv root. Chimera reads it at startup, resolves `lib/python*/site-packages`, and inserts it into `sys.path` before importing any user modules.
 
-```rust
-let config = ChimeraConfig::builder()
-    .python_dir("python")
-    .venv(".venv")  // path to venv root (relative or absolute)
-    .module("endpoints")
-    .build()?;
-```
-
-At build time, Chimera resolves the venv's `lib/python*/site-packages` directory and adds it to `sys.path` at startup, before importing any user modules.
-
-### Fallback: `VIRTUAL_ENV` Environment Variable
-
-If `.venv()` is not called, Chimera checks the `VIRTUAL_ENV` environment variable as a fallback. This means `cargo run` inside an activated venv will pick up packages automatically — but note that `VIRTUAL_ENV` alone does nothing for embedded interpreters; Chimera reads it and performs the `sys.path` insertion itself.
+Note: `VIRTUAL_ENV` alone does nothing for embedded interpreters — PyO3 ignores it entirely. Chimera reads the variable and performs the `sys.path` insertion itself.
 
 ### Minimal Justfile Example
 
 ```just
-venv_python := ".venv/bin/python"
+venv_dir := justfile_directory() / ".venv"
+venv_python := venv_dir / "bin/python"
 
 serve: venv sync
-    PYO3_PYTHON={{venv_python}} cargo run
+    PYO3_PYTHON={{venv_python}} VIRTUAL_ENV={{venv_dir}} cargo run
 ```
 
-`PYO3_PYTHON` is a build-time variable that tells PyO3 which Python to link against. Runtime package resolution is handled by Chimera's `.venv()` configuration.
+Both variables are derived from the same `venv_dir` — single source of truth. `PYO3_PYTHON` tells PyO3 which Python to link against at build time. `VIRTUAL_ENV` tells Chimera where to find packages at runtime.
+
+### Programmatic Override: `.venv()`
+
+For cases where environment variables aren't suitable (multi-venv setups, testing), use the `.venv()` builder method to override `VIRTUAL_ENV` with an explicit path:
+
+```rust
+let config = ChimeraConfig::builder()
+    .python_dir("python")
+    .venv(".venv")  // overrides VIRTUAL_ENV
+    .module("endpoints")
+    .build()?;
+```
 
 ## Python Distribution Requirements
 
@@ -202,7 +203,7 @@ let python_modules = &["endpoints", "pool_handlers"];  // → python/endpoints.p
 
 The embedded Python interpreter can't find packages installed in a virtual environment.
 
-**Fix**: Add `.venv("<path>")` to your `ChimeraConfig` builder. This tells Chimera to add the venv's `site-packages` to `sys.path` at startup. See [Virtual Environment Support](#virtual-environment-support).
+**Fix**: Set `VIRTUAL_ENV` to your venv root when running the server (e.g., `VIRTUAL_ENV=.venv cargo run`). Chimera reads this and adds the venv's `site-packages` to `sys.path` at startup. See [Virtual Environment Support](#virtual-environment-support).
 
 ### "libpython not found" or linking errors at runtime
 
