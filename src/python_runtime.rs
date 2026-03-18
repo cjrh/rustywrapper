@@ -112,6 +112,16 @@ impl PythonRuntime {
 
         tracing::info!("Python module path: {}", python_dir_str);
 
+        let venv_site_packages_str = config
+            .venv_site_packages
+            .as_ref()
+            .and_then(|p| p.to_str())
+            .map(|s| s.to_string());
+
+        if let Some(ref sp) = venv_site_packages_str {
+            tracing::info!("Venv site-packages: {}", sp);
+        }
+
         // Setup signal handler if not disabled
         if !config.disable_signal_handler {
             Python::attach(|py| {
@@ -128,6 +138,7 @@ impl PythonRuntime {
                 config.pool_workers,
                 &config.modules,
                 &python_dir_str,
+                venv_site_packages_str.as_deref(),
             )
         })
         .map_err(|e| RuntimeError::Python(e.to_string()))?;
@@ -230,10 +241,19 @@ impl PythonRuntime {
         pool_workers: usize,
         python_modules: &[String],
         python_dir: &str,
+        venv_site_packages: Option<&str>,
     ) -> PyResult<SharedPythonState> {
-        // Add python/ directory to sys.path using absolute path
+        // Add paths to sys.path using absolute paths
         let sys = py.import("sys")?;
         let path = sys.getattr("path")?;
+
+        // Insert venv site-packages first (will end up at position 1 after python_dir)
+        if let Some(site_packages) = venv_site_packages {
+            path.call_method1("insert", (0, site_packages))?;
+            tracing::info!("Added venv site-packages to sys.path: {}", site_packages);
+        }
+
+        // python_dir gets highest priority
         path.call_method1("insert", (0, python_dir))?;
 
         // Embed the chimera framework at compile time

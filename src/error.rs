@@ -19,6 +19,10 @@ pub enum ConfigError {
     /// Invalid worker count configuration.
     #[error("Invalid worker count: {0}")]
     InvalidWorkerCount(String),
+
+    /// Virtual environment is invalid (missing site-packages).
+    #[error("Virtual environment invalid (missing site-packages): {0}")]
+    VenvInvalid(PathBuf),
 }
 
 /// Errors that can occur during runtime operations.

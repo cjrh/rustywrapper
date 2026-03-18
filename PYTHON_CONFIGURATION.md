@@ -82,12 +82,63 @@ def compute_squares(numbers: list[int]) -> list[int]:
 
 ## Virtual Environment Support
 
-*Coming soon*
+PyO3's `auto-initialize` embeds the Python interpreter directly in the Rust process. Unlike running `python` from a shell, this bypasses normal venv activation: no `pyvenv.cfg` is read, `sys.prefix` isn't redirected, and venv `site-packages` aren't on `sys.path`. The result is that only stdlib imports work unless the runtime explicitly adds the venv's site-packages to `sys.path`.
 
-Future versions will support:
-- Automatic virtualenv activation
-- Configuration via `pyproject.toml` or environment variables
-- Example integrations with numpy, scipy, and polars
+Chimera handles this automatically when you configure a venv path.
+
+### Configuration
+
+Use the `.venv()` builder method to point Chimera at your virtual environment:
+
+```rust
+let config = ChimeraConfig::builder()
+    .python_dir("python")
+    .venv(".venv")  // path to venv root (relative or absolute)
+    .module("endpoints")
+    .build()?;
+```
+
+At build time, Chimera resolves the venv's `lib/python*/site-packages` directory and adds it to `sys.path` at startup, before importing any user modules.
+
+### Fallback: `VIRTUAL_ENV` Environment Variable
+
+If `.venv()` is not called, Chimera checks the `VIRTUAL_ENV` environment variable as a fallback. This means `cargo run` inside an activated venv will pick up packages automatically — but note that `VIRTUAL_ENV` alone does nothing for embedded interpreters; Chimera reads it and performs the `sys.path` insertion itself.
+
+### Minimal Justfile Example
+
+```just
+venv_python := ".venv/bin/python"
+
+serve: venv sync
+    PYO3_PYTHON={{venv_python}} cargo run
+```
+
+`PYO3_PYTHON` is a build-time variable that tells PyO3 which Python to link against. Runtime package resolution is handled by Chimera's `.venv()` configuration.
+
+## Python Distribution Requirements
+
+The venv must be created with a Python interpreter that has a **shared libpython** (`libpython3.x.so`) accessible to the dynamic linker.
+
+### Recommended: System Python
+
+System/distro Python (`/usr/bin/python3`) is the simplest option. On most Linux distributions, it ships with `--enable-shared` and places `libpython3.x.so` in a standard linker path. Create the venv with system Python, then use `uv` for fast package management:
+
+```bash
+/usr/bin/python3 -m venv --without-pip .venv
+uv sync  # or: uv pip install polars numpy etc.
+```
+
+### Incompatible: `uv`-provided interpreters
+
+Python interpreters installed by `uv python install` use [python-build-standalone](https://github.com/indygreg/python-build-standalone) distributions, which are **not compatible** with PyO3 embedding:
+
+- They statically link libpython and all extensions into the interpreter binary
+- PyO3 needs a shared `libpython3.x.so` to link against at build time and load at runtime
+- PyO3's `auto-initialize` feature is explicitly disabled when static linking is detected
+- Extension modules (numpy, polars, etc.) expect a loadable shared libpython — static linking breaks this
+- Workarounds like `LD_LIBRARY_PATH` are fragile and don't address the fundamental static-vs-shared mismatch
+
+**Relevant issues**: [uv#11006](https://github.com/astral-sh/uv/issues/11006), [python-build-standalone#619](https://github.com/indygreg/python-build-standalone/issues/619), [PyO3#1568](https://github.com/PyO3/pyo3/issues/1568)
 
 ## Type Hints and IDE Support
 
@@ -147,12 +198,25 @@ A module listed in `python_modules` doesn't exist in the `python/` directory.
 let python_modules = &["endpoints", "pool_handlers"];  // → python/endpoints.py, python/pool_handlers.py
 ```
 
+### "ModuleNotFoundError" for pip-installed packages (polars, numpy, etc.)
+
+The embedded Python interpreter can't find packages installed in a virtual environment.
+
+**Fix**: Add `.venv("<path>")` to your `ChimeraConfig` builder. This tells Chimera to add the venv's `site-packages` to `sys.path` at startup. See [Virtual Environment Support](#virtual-environment-support).
+
+### "libpython not found" or linking errors at runtime
+
+The venv was likely created with a Python that doesn't have a shared `libpython3.x.so`.
+
+**Fix**: Recreate the venv using system Python (`/usr/bin/python3 -m venv`), not a `uv`-installed interpreter. See [Python Distribution Requirements](#python-distribution-requirements).
+
 ### Import works in Python REPL but not in server
 
 The REPL might have a different working directory or `sys.path`. The server logs its Python module path at startup:
 
 ```
 INFO chimera::python_runtime: Python module path: /absolute/path/to/project/python
+INFO chimera::python_runtime: Venv site-packages: /absolute/path/to/.venv/lib/python3.x/site-packages
 ```
 
-Verify this path is correct.
+Verify these paths are correct.

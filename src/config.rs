@@ -11,6 +11,10 @@ pub struct ChimeraConfig {
     /// Path to the directory containing Python handlers.
     pub python_dir: PathBuf,
 
+    /// Path to the venv's site-packages directory (resolved during build()).
+    /// None if no venv was configured or detected.
+    pub venv_site_packages: Option<PathBuf>,
+
     /// List of Python module names to import (registers routes via @route decorators).
     pub modules: Vec<String>,
 
@@ -41,6 +45,7 @@ impl Default for ChimeraConfig {
     fn default() -> Self {
         Self {
             python_dir: PathBuf::from("python"),
+            venv_site_packages: None,
             modules: Vec::new(),
             pool_workers: 4,
             dispatch_workers: 4,
@@ -54,6 +59,7 @@ impl Default for ChimeraConfig {
 #[derive(Debug, Clone, Default)]
 pub struct ChimeraConfigBuilder {
     python_dir: Option<PathBuf>,
+    venv_path: Option<PathBuf>,
     modules: Vec<String>,
     pool_workers: Option<usize>,
     dispatch_workers: Option<usize>,
@@ -75,6 +81,20 @@ impl ChimeraConfigBuilder {
     /// not need to be present in this directory.
     pub fn python_dir<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.python_dir = Some(path.into());
+        self
+    }
+
+    /// Set the path to a Python virtual environment.
+    ///
+    /// Chimera will resolve the venv's `site-packages` directory and add it
+    /// to `sys.path` at startup, making pip-installed packages importable.
+    ///
+    /// If not set, Chimera checks the `VIRTUAL_ENV` environment variable as
+    /// a fallback. If neither is set, no venv site-packages are added.
+    ///
+    /// The path can be relative (resolved from current directory) or absolute.
+    pub fn venv<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.venv_path = Some(path.into());
         self
     }
 
@@ -138,6 +158,7 @@ impl ChimeraConfigBuilder {
     /// Build the configuration, validating all settings.
     pub fn build(self) -> Result<ChimeraConfig, ConfigError> {
         let python_dir = self.resolve_python_dir()?;
+        let venv_site_packages = self.resolve_venv_site_packages()?;
 
         // Validate pool workers
         let pool_workers = self.pool_workers.unwrap_or(4);
@@ -157,6 +178,7 @@ impl ChimeraConfigBuilder {
 
         Ok(ChimeraConfig {
             python_dir,
+            venv_site_packages,
             modules: self.modules,
             pool_workers,
             dispatch_workers,
@@ -193,6 +215,59 @@ impl ChimeraConfigBuilder {
         }
 
         Ok(absolute_path)
+    }
+
+    /// Resolve the venv's site-packages directory.
+    ///
+    /// Uses the explicitly configured venv path, falling back to the
+    /// `VIRTUAL_ENV` environment variable. Globs for `lib/python*/site-packages`
+    /// within the venv root and validates the directory exists.
+    fn resolve_venv_site_packages(&self) -> Result<Option<PathBuf>, ConfigError> {
+        // Determine venv root: explicit config, then VIRTUAL_ENV env var
+        let venv_root = match &self.venv_path {
+            Some(path) => path.clone(),
+            None => match std::env::var("VIRTUAL_ENV") {
+                Ok(val) if !val.is_empty() => PathBuf::from(val),
+                _ => return Ok(None),
+            },
+        };
+
+        // Resolve to absolute path
+        let venv_root = if venv_root.is_absolute() {
+            venv_root
+        } else {
+            std::env::current_dir()
+                .map_err(|e| {
+                    ConfigError::PathResolution(format!(
+                        "Failed to get current directory: {}",
+                        e
+                    ))
+                })?
+                .join(&venv_root)
+        };
+
+        // Glob for lib/python*/site-packages
+        let lib_dir = venv_root.join("lib");
+        if !lib_dir.exists() {
+            return Err(ConfigError::VenvInvalid(venv_root));
+        }
+
+        let site_packages = std::fs::read_dir(&lib_dir)
+            .map_err(|_| ConfigError::VenvInvalid(venv_root.clone()))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("python"))
+                    && path.is_dir()
+            })
+            .map(|python_dir| python_dir.join("site-packages"));
+
+        match site_packages {
+            Some(sp) if sp.is_dir() => Ok(Some(sp)),
+            _ => Err(ConfigError::VenvInvalid(venv_root)),
+        }
     }
 }
 

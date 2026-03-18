@@ -33,6 +33,7 @@ async fn main() {
     // Configure the Python runtime
     let config = ChimeraConfig::builder()
         .python_dir("python")
+        .venv(".venv")
         .module("endpoints")
         .module("pool_handlers")
         .module("async_endpoints")
