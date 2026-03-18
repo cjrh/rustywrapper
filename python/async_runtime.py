@@ -1,5 +1,5 @@
 """
-Async runtime for Snaxum - provides a persistent asyncio event loop in a dedicated thread.
+Async runtime for Chimera - provides a persistent asyncio event loop in a dedicated thread.
 
 This module manages async Python handlers with queue-based communication to Rust.
 The async thread runs an asyncio event loop that can handle thousands of concurrent
@@ -51,7 +51,7 @@ def start_async_runtime(pool: ProcessPoolExecutor) -> None:
     global _thread, _pool
     _pool = pool
     _shutdown_event.clear()
-    _thread = threading.Thread(target=_async_thread_main, name="snaxum-async", daemon=True)
+    _thread = threading.Thread(target=_async_thread_main, name="chimera-async", daemon=True)
     _thread.start()
 
 
@@ -192,7 +192,7 @@ async def _handle_async_request(
     """
     try:
         # Import here to avoid circular dependency
-        from snaxum import dispatch_async
+        from chimera import dispatch_async
 
         response = await dispatch_async(method, path, data, _pool)
         _response_queue.put((request_id, response))

@@ -1,7 +1,7 @@
 > [!WARNING]
 > This is a research-level hobby project in alpha. It is not suitable for production use or any serious application.
 
-# Snaxum
+# Chimera
 
 A Rust/Axum web server with Flask-style dynamic Python routing via PyO3.
 
@@ -11,7 +11,7 @@ You add this to your own Axum server to enable Python endpoints:
 
 ```rust
 use axum::{routing::any, Router};
-use snaxum::prelude::*;
+use chimera::prelude::*;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -20,7 +20,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pyo3::Python::initialize();
 
     // Configure the Python runtime
-    let config = SnaxumConfig::builder()
+    let config = ChimeraConfig::builder()
         .python_dir("./python")
         .module("endpoints")
         .module("pool_handlers")
@@ -48,7 +48,7 @@ Now you can add python endpoints in files in `./python/`:
 # ./python/endpoints.py
 import sys
 import polars as pl
-from snaxum import route, Request
+from chimera import route, Request
 
 @route('/python/hello', methods=['GET'])
 def hello(request: Request) -> dict:
@@ -80,7 +80,7 @@ Async handlers are also supported - just use `async def`:
 ```python
 # ./python/async_endpoints.py
 import asyncio
-from snaxum import route, Request
+from chimera import route, Request
 
 @route('/python/async/hello', methods=['GET'])
 async def async_hello(request: Request) -> dict:
@@ -140,14 +140,14 @@ This POC is demonstrating an architecture that aims to combine the best of both 
 ## Project Structure
 
 ```
-snaxum/
+chimera/
 ├── src/
 │   ├── main.rs              # Server setup, signal handling
 │   ├── rust_handlers.rs     # Pure Rust endpoints
 │   ├── python_runtime.rs    # Python thread with channel communication
 │   └── dispatcher.rs        # Catch-all handler for /python/*
 ├── python/
-│   ├── snaxum.py      # Framework: @route decorator, Request, dispatch
+│   ├── chimera.py      # Framework: @route decorator, Request, dispatch
 │   ├── endpoints.py         # In-thread Python handlers
 │   ├── pool_handlers.py     # Process pool handlers
 │   └── pool_workers.py      # Process pool worker functions
@@ -227,7 +227,7 @@ The following diagram illustrates the request flow for Python endpoints:
 ```
 HTTP Request → Axum catch-all route (/python/*path)
      → Generic Dispatcher → Channel → Python Runtime Thread
-     → snaxum.dispatch(method, path, request_data)
+     → chimera.dispatch(method, path, request_data)
      → Route Registry path matching → User Handler → Response
 ```
 
@@ -238,11 +238,11 @@ HTTP Request → Axum catch-all route (/python/*path)
 A dedicated Rust thread owns the Python GIL and ProcessPoolExecutor:
 
 1. Initializes Python and adds `python/` to `sys.path`
-2. Imports `snaxum` framework
+2. Imports `chimera` framework
 3. Imports user modules (registers routes via `@route` decorators)
 4. Creates `ProcessPoolExecutor` with worker initializer
 5. Logs all registered routes at startup
-6. Loops on channel, calling `snaxum.dispatch()` for each request
+6. Loops on channel, calling `chimera.dispatch()` for each request
 
 Communication uses `std::sync::mpsc` for thread-side and `tokio::sync::oneshot` for async responses.
 

@@ -1,5 +1,5 @@
 """
-Process pool worker functions for Snaxum.
+Process pool worker functions for Chimera.
 
 These functions run in separate Python processes via ProcessPoolExecutor.
 They enable true parallelism for CPU-bound work across multiple cores.

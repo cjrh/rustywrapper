@@ -1,4 +1,4 @@
-"""Type stubs for the snaxum framework (embedded in Rust binary)."""
+"""Type stubs for the chimera framework (embedded in Rust binary)."""
 
 from typing import Any, Callable, Coroutine, TypeVar
 from concurrent.futures import ProcessPoolExecutor

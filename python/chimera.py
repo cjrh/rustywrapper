@@ -1,5 +1,5 @@
 """
-Snaxum - Flask-style Python routing framework for Rust/Axum integration.
+Chimera - Flask-style Python routing framework for Rust/Axum integration.
 
 Provides decorator-based route registration with path parameter extraction,
 fully dynamic routing at runtime with no build step required.

@@ -18,10 +18,10 @@ use std::sync::Arc;
 ///
 /// ```ignore
 /// use axum::{routing::any, Router};
-/// use snaxum::{handle_python_request, PythonRuntime, SnaxumConfig};
+/// use chimera::{handle_python_request, PythonRuntime, ChimeraConfig};
 /// use std::sync::Arc;
 ///
-/// let config = SnaxumConfig::builder()
+/// let config = ChimeraConfig::builder()
 ///     .python_dir("./python")
 ///     .module("endpoints")
 ///     .build()?;

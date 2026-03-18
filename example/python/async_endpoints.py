@@ -1,5 +1,5 @@
 """
-Async Python endpoints for Snaxum demonstrating async handler patterns.
+Async Python endpoints for Chimera demonstrating async handler patterns.
 
 These handlers run in a dedicated asyncio event loop thread, allowing
 thousands of concurrent requests without blocking Rust worker threads.
@@ -8,7 +8,7 @@ thousands of concurrent requests without blocking Rust worker threads.
 import asyncio
 import sys
 from concurrent.futures import ProcessPoolExecutor
-from snaxum import route, Request
+from chimera import route, Request
 
 
 @route('/python/async/hello', methods=['GET'])

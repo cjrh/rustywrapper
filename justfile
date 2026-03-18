@@ -1,4 +1,4 @@
-# Snaxum library development commands
+# Chimera library development commands
 
 # Absolute path to venv for PyO3
 venv_dir := justfile_directory() / ".venv"

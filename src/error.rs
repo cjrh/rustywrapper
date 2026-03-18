@@ -1,4 +1,4 @@
-//! Error types for Snaxum.
+//! Error types for Chimera.
 //!
 //! This module provides consolidated error types for configuration and runtime errors.
 
@@ -45,6 +45,6 @@ pub enum RuntimeError {
     Config(#[from] ConfigError),
 
     /// Async dispatch is not enabled.
-    #[error("Async dispatch is not enabled. Enable it with SnaxumConfig::enable_async(true)")]
+    #[error("Async dispatch is not enabled. Enable it with ChimeraConfig::enable_async(true)")]
     AsyncNotEnabled,
 }

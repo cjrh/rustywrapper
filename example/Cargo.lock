@@ -85,6 +85,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "chimera"
+version = "0.2.0"
+dependencies = [
+ "axum",
+ "crossbeam-channel",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "chimera-example"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "chimera",
+ "pyo3",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "crossbeam-channel"
 version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -577,36 +607,6 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
-
-[[package]]
-name = "snaxum"
-version = "0.2.0"
-dependencies = [
- "axum",
- "crossbeam-channel",
- "pyo3",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tower",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "snaxum-example"
-version = "0.1.0"
-dependencies = [
- "axum",
- "pyo3",
- "serde",
- "serde_json",
- "snaxum",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
 
 [[package]]
 name = "socket2"

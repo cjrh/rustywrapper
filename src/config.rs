@@ -1,13 +1,13 @@
-//! Configuration for the Snaxum Python runtime.
+//! Configuration for the Chimera Python runtime.
 //!
 //! This module provides a builder pattern for configuring the Python runtime.
 
 use crate::error::ConfigError;
 use std::path::PathBuf;
 
-/// Configuration for the Snaxum Python runtime.
+/// Configuration for the Chimera Python runtime.
 #[derive(Debug, Clone)]
-pub struct SnaxumConfig {
+pub struct ChimeraConfig {
     /// Path to the directory containing Python handlers.
     pub python_dir: PathBuf,
 
@@ -30,14 +30,14 @@ pub struct SnaxumConfig {
     pub enable_async: bool,
 }
 
-impl SnaxumConfig {
+impl ChimeraConfig {
     /// Create a new configuration builder.
-    pub fn builder() -> SnaxumConfigBuilder {
-        SnaxumConfigBuilder::new()
+    pub fn builder() -> ChimeraConfigBuilder {
+        ChimeraConfigBuilder::new()
     }
 }
 
-impl Default for SnaxumConfig {
+impl Default for ChimeraConfig {
     fn default() -> Self {
         Self {
             python_dir: PathBuf::from("python"),
@@ -50,9 +50,9 @@ impl Default for SnaxumConfig {
     }
 }
 
-/// Builder for creating a [`SnaxumConfig`].
+/// Builder for creating a [`ChimeraConfig`].
 #[derive(Debug, Clone, Default)]
-pub struct SnaxumConfigBuilder {
+pub struct ChimeraConfigBuilder {
     python_dir: Option<PathBuf>,
     modules: Vec<String>,
     pool_workers: Option<usize>,
@@ -61,7 +61,7 @@ pub struct SnaxumConfigBuilder {
     enable_async: Option<bool>,
 }
 
-impl SnaxumConfigBuilder {
+impl ChimeraConfigBuilder {
     /// Create a new configuration builder with default values.
     pub fn new() -> Self {
         Self::default()
@@ -71,7 +71,7 @@ impl SnaxumConfigBuilder {
     ///
     /// This path can be relative (resolved from current directory) or absolute.
     /// The directory should contain the handler modules (e.g., `endpoints.py`).
-    /// The `snaxum` framework module is embedded in the binary and does
+    /// The `chimera` framework module is embedded in the binary and does
     /// not need to be present in this directory.
     pub fn python_dir<P: Into<PathBuf>>(mut self, path: P) -> Self {
         self.python_dir = Some(path.into());
@@ -114,7 +114,7 @@ impl SnaxumConfigBuilder {
 
     /// Disable the Python SIGINT handler setup.
     ///
-    /// By default, Snaxum configures Python to use SIG_DFL for SIGINT,
+    /// By default, Chimera configures Python to use SIG_DFL for SIGINT,
     /// allowing Rust to handle Ctrl+C for graceful shutdown. Set this to true
     /// if your application handles signals differently.
     pub fn disable_signal_handler(mut self, disable: bool) -> Self {
@@ -136,7 +136,7 @@ impl SnaxumConfigBuilder {
     }
 
     /// Build the configuration, validating all settings.
-    pub fn build(self) -> Result<SnaxumConfig, ConfigError> {
+    pub fn build(self) -> Result<ChimeraConfig, ConfigError> {
         let python_dir = self.resolve_python_dir()?;
 
         // Validate pool workers
@@ -155,7 +155,7 @@ impl SnaxumConfigBuilder {
             ));
         }
 
-        Ok(SnaxumConfig {
+        Ok(ChimeraConfig {
             python_dir,
             modules: self.modules,
             pool_workers,
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn test_builder_defaults() {
         // This test would fail without a valid python dir, but demonstrates the API
-        let builder = SnaxumConfig::builder()
+        let builder = ChimeraConfig::builder()
             .module("endpoints")
             .pool_workers(2)
             .dispatch_workers(2);
@@ -217,7 +217,7 @@ mod tests {
     #[test]
     fn test_zero_workers_rejected() {
         // Create a temporary test - in real tests we'd mock the filesystem
-        let result = SnaxumConfigBuilder::new()
+        let result = ChimeraConfigBuilder::new()
             .pool_workers(0)
             .build();
 

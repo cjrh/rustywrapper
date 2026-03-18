@@ -11,7 +11,7 @@ categories = ["web-programming", "api-bindings"]
 exclude = ["example/", "CLAUDE.md"]
 
 [lib]
-name = "snaxum"
+name = "chimera"
 path = "src/lib.rs"
 
 [dependencies]

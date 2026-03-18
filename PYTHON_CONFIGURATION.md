@@ -30,8 +30,8 @@ Using an absolute path (computed from `std::env::current_dir()`) ensures imports
 
 ```bash
 # All of these work with absolute paths:
-./target/debug/snaxum
-cd /tmp && /path/to/snaxum
+./target/debug/chimera
+cd /tmp && /path/to/chimera
 cargo run
 ```
 
@@ -39,9 +39,9 @@ With a relative path like `"python"`, the server would only work when run from t
 
 ### Import Resolution Order
 
-When Python encounters `from snaxum import route`:
+When Python encounters `from chimera import route`:
 
-1. `{project_root}/python/` (our inserted path) → finds `snaxum.py` ✓
+1. `{project_root}/python/` (our inserted path) → finds `chimera.py` ✓
 2. Standard library paths (`/usr/lib/python3.x/`, etc.)
 3. Site-packages (pip-installed packages)
 
@@ -49,7 +49,7 @@ When Python encounters `from snaxum import route`:
 
 ```
 python/
-├── snaxum.py      # Framework: @route decorator, Request class, dispatch()
+├── chimera.py      # Framework: @route decorator, Request class, dispatch()
 ├── endpoints.py         # In-thread request handlers
 ├── pool_handlers.py     # ProcessPoolExecutor-based handlers
 └── pool_workers.py      # Functions that run in worker processes
@@ -61,7 +61,7 @@ python/
 
 ```python
 # pool_handlers.py
-from snaxum import route, Request
+from chimera import route, Request
 from pool_workers import compute_squares, compute_sum
 ```
 
@@ -91,13 +91,13 @@ Future versions will support:
 
 ## Type Hints and IDE Support
 
-Since `snaxum.py` is embedded into the Rust binary at compile time, it doesn't exist as a resolvable Python module for type checkers. To enable IDE autocompletion and type checking, we use stub files.
+Since `chimera.py` is embedded into the Rust binary at compile time, it doesn't exist as a resolvable Python module for type checkers. To enable IDE autocompletion and type checking, we use stub files.
 
 ### Setup
 
 The `example/` directory includes:
 
-- `typings/snaxum.pyi` - Type stubs for the snaxum module
+- `typings/chimera.pyi` - Type stubs for the chimera module
 - `pyrightconfig.json` - Pyright configuration pointing to the stubs
 
 ### What's Provided
@@ -131,11 +131,11 @@ Adjust paths in `pyrightconfig.json` if your Python code is in a different direc
 
 ## Troubleshooting
 
-### "ModuleNotFoundError: No module named 'snaxum'"
+### "ModuleNotFoundError: No module named 'chimera'"
 
 The server was likely started from the wrong directory, or the `python/` directory doesn't exist.
 
-**Fix**: Run from the project root, or check that `python/snaxum.py` exists.
+**Fix**: Run from the project root, or check that `python/chimera.py` exists.
 
 ### "ModuleNotFoundError: No module named 'endpoints'"
 
@@ -152,7 +152,7 @@ let python_modules = &["endpoints", "pool_handlers"];  // → python/endpoints.p
 The REPL might have a different working directory or `sys.path`. The server logs its Python module path at startup:
 
 ```
-INFO snaxum::python_runtime: Python module path: /absolute/path/to/project/python
+INFO chimera::python_runtime: Python module path: /absolute/path/to/project/python
 ```
 
 Verify this path is correct.

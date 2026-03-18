@@ -1,4 +1,4 @@
-use crate::config::SnaxumConfig;
+use crate::config::ChimeraConfig;
 use crate::error::RuntimeError;
 use crossbeam_channel::{Receiver, Sender, bounded};
 use pyo3::prelude::*;
@@ -93,9 +93,9 @@ impl PythonRuntime {
     /// # Example
     ///
     /// ```ignore
-    /// use snaxum::{SnaxumConfig, PythonRuntime};
+    /// use chimera::{ChimeraConfig, PythonRuntime};
     ///
-    /// let config = SnaxumConfig::builder()
+    /// let config = ChimeraConfig::builder()
     ///     .python_dir("./python")
     ///     .module("endpoints")
     ///     .pool_workers(4)
@@ -103,7 +103,7 @@ impl PythonRuntime {
     ///
     /// let runtime = PythonRuntime::with_config(config)?;
     /// ```
-    pub fn with_config(config: SnaxumConfig) -> Result<Self, RuntimeError> {
+    pub fn with_config(config: ChimeraConfig) -> Result<Self, RuntimeError> {
         let python_dir_str = config
             .python_dir
             .to_str()
@@ -201,7 +201,7 @@ impl PythonRuntime {
         dispatch_workers: usize,
         python_modules: &[&str],
     ) -> Result<Self, RuntimeError> {
-        let config = SnaxumConfig::builder()
+        let config = ChimeraConfig::builder()
             .python_dir("python")
             .modules(python_modules.iter().map(|s| s.to_string()))
             .pool_workers(pool_workers)
@@ -236,20 +236,20 @@ impl PythonRuntime {
         let path = sys.getattr("path")?;
         path.call_method1("insert", (0, python_dir))?;
 
-        // Embed the snaxum framework at compile time
-        let snaxum_code = include_str!(concat!(
+        // Embed the chimera framework at compile time
+        let chimera_code = include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/python/snaxum.py"
+            "/python/chimera.py"
         ));
 
         // Load as a module (registers in sys.modules automatically)
-        let snaxum = PyModule::from_code(
+        let chimera = PyModule::from_code(
             py,
-            CString::new(snaxum_code)
-                .expect("snaxum.py contains null byte")
+            CString::new(chimera_code)
+                .expect("chimera.py contains null byte")
                 .as_c_str(),
-            c"snaxum.py",
-            c"snaxum",
+            c"chimera.py",
+            c"chimera",
         )?;
 
         // Import user modules (which registers routes via @route decorators)
@@ -268,11 +268,11 @@ impl PythonRuntime {
         let executor = Self::create_pool(py, pool_workers, pool_workers_module.as_ref())?;
 
         // Log registered routes
-        Self::log_routes(&snaxum);
+        Self::log_routes(&chimera);
 
         // Get dispatch and route info functions
-        let dispatch_fn = snaxum.getattr("dispatch")?;
-        let get_route_info_fn = snaxum.getattr("get_route_info")?;
+        let dispatch_fn = chimera.getattr("dispatch")?;
+        let get_route_info_fn = chimera.getattr("get_route_info")?;
 
         // Convert to Py<PyAny> for thread-safe storage
         Ok(SharedPythonState {
@@ -525,8 +525,8 @@ impl PythonRuntime {
         }
     }
 
-    fn log_routes(snaxum: &Bound<'_, PyModule>) {
-        if let Ok(list_routes) = snaxum.getattr("list_routes") {
+    fn log_routes(chimera: &Bound<'_, PyModule>) {
+        if let Ok(list_routes) = chimera.getattr("list_routes") {
             if let Ok(routes) = list_routes.call0() {
                 if let Ok(routes_list) = routes.extract::<Bound<'_, PyList>>() {
                     tracing::info!("Registered Python routes:");

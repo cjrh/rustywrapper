@@ -1,5 +1,5 @@
 """
-In-thread Python endpoints for Snaxum using Flask-style decorators.
+In-thread Python endpoints for Chimera using Flask-style decorators.
 
 These handlers run in the Python runtime thread via channel communication.
 The GIL is held for the duration of each request.
@@ -7,7 +7,7 @@ The GIL is held for the duration of each request.
 
 import sys
 import polars as pl
-from snaxum import route, Request
+from chimera import route, Request
 
 
 @route('/python/hello', methods=['GET'])
