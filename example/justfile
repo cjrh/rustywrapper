@@ -3,6 +3,7 @@
 
 venv_dir := justfile_directory() / ".venv"
 venv_python := venv_dir / "bin/python"
+server := "http://localhost:3777"
 
 @default:
     just --list
@@ -28,24 +29,24 @@ test-all: test-rust test-python test-async test-async-concurrency test-pool test
 
 test-rust:
     @echo "Testing Rust endpoints..."
-    curl -s http://localhost:3000/rust/hello | jq
-    curl -s -X POST http://localhost:3000/rust/echo \
+    curl -s {{server}}/rust/hello | jq
+    curl -s -X POST {{server}}/rust/echo \
         -H "Content-Type: application/json" \
         -d '{"name":"test"}' | jq
 
 test-python:
     @echo "Testing Python in-thread endpoints..."
-    curl -s http://localhost:3000/python/hello | jq
-    curl -s -X POST http://localhost:3000/python/process \
+    curl -s {{server}}/python/hello | jq
+    curl -s -X POST {{server}}/python/process \
         -H "Content-Type: application/json" \
         -d '{"data":"hello"}' | jq
 
 test-async:
     @echo "Testing Python async endpoints..."
-    curl -s http://localhost:3000/python/async/hello | jq
-    curl -s "http://localhost:3000/python/async/sleep?duration=0.5" | jq
-    curl -s http://localhost:3000/python/async/concurrent | jq
-    curl -s "http://localhost:3000/python/async/timeout?timeout=2&delay=1" | jq
+    curl -s {{server}}/python/async/hello | jq
+    curl -s "{{server}}/python/async/sleep?duration=0.5" | jq
+    curl -s {{server}}/python/async/concurrent | jq
+    curl -s "{{server}}/python/async/timeout?timeout=2&delay=1" | jq
 
 test-async-concurrency:
     #!/usr/bin/env bash
@@ -60,7 +61,7 @@ test-async-concurrency:
 
     # Send 10 concurrent async requests
     for i in {1..$num_requests}; do
-        curl -s "http://localhost:3000/python/async/sleep?duration=1" > /tmp/async_task$i.json &
+        curl -s "{{server}}/python/async/sleep?duration=1" > /tmp/async_task$i.json &
     done
 
     # Wait for all to complete
@@ -84,12 +85,12 @@ test-async-concurrency:
     fi
 
 test-python-polars:
-    curl -s http://localhost:3000/python/polars-demo | jq
+    curl -s {{server}}/python/polars-demo | jq
 
 test-pool:
     @echo "Testing Python process pool endpoints..."
-    curl -s "http://localhost:3000/python/pool/squares?numbers=1,2,3,4,5" | jq
-    curl -s -X POST http://localhost:3000/python/pool/compute \
+    curl -s "{{server}}/python/pool/squares?numbers=1,2,3,4,5" | jq
+    curl -s -X POST {{server}}/python/pool/compute \
         -H "Content-Type: application/json" \
         -d '{"numbers":[1,2,3,4,5]}' | jq
 
@@ -105,8 +106,8 @@ test-concurrency:
 
     # Send concurrent requests
     for i in $(seq 1 "$num_requests"); do
-        # curl -s "http://localhost:3000/python/async/sleep?duration=1" > /tmp/async_task$i.json &
-        curl -s "http://localhost:3000/python/pool/slow?duration=1&task_id=$i" > "/tmp/task${i}.json" &
+        # curl -s "{{server}}/python/async/sleep?duration=1" > /tmp/async_task$i.json &
+        curl -s "{{server}}/python/pool/slow?duration=1&task_id=$i" > "/tmp/task${i}.json" &
     done
 
     # Wait for all to complete

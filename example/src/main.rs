@@ -3,14 +3,14 @@
 //! Run with: cargo run (from example/ directory)
 //!
 //! Then test with:
-//! - curl http://localhost:3000/rust/hello
-//! - curl http://localhost:3000/python/hello
-//! - curl -X POST http://localhost:3000/python/process -d '{"data":"test"}'
+//! - curl http://localhost:3777/rust/hello
+//! - curl http://localhost:3777/python/hello
+//! - curl -X POST http://localhost:3777/python/process -d '{"data":"test"}'
 //!
 //! Async Python handlers:
-//! - curl http://localhost:3000/python/async/hello
-//! - curl "http://localhost:3000/python/async/sleep?duration=1.5"
-//! - curl http://localhost:3000/python/async/concurrent
+//! - curl http://localhost:3777/python/async/hello
+//! - curl "http://localhost:3777/python/async/sleep?duration=1.5"
+//! - curl http://localhost:3777/python/async/concurrent
 
 use axum::{
     http::StatusCode,
@@ -55,8 +55,8 @@ async fn main() {
         .route("/python/{*path}", any(handle_python_request))
         .with_state(runtime);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    tracing::info!("Server listening on http://0.0.0.0:3000");
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3777").await.unwrap();
+    tracing::info!("Server listening on http://0.0.0.0:3777");
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

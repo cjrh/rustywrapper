@@ -29,7 +29,7 @@ async def async_sleep(request: Request) -> dict:
         duration: Sleep duration in seconds (default: 1.0)
 
     Example:
-        curl "http://localhost:3000/python/async/sleep?duration=2.5"
+        curl "http://localhost:3777/python/async/sleep?duration=2.5"
     """
     duration = float(request.query_params.get('duration', '1.0'))
     await asyncio.sleep(duration)
@@ -48,7 +48,7 @@ async def async_concurrent(request: Request) -> dict:
     sequentially but only ~1 second concurrently.
 
     Example:
-        curl http://localhost:3000/python/async/concurrent
+        curl http://localhost:3777/python/async/concurrent
     """
     async def simulated_io(name: str, delay: float) -> dict:
         await asyncio.sleep(delay)
@@ -79,7 +79,7 @@ async def async_compute(request: Request, pool: ProcessPoolExecutor) -> dict:
         JSON with 'count' field for number of iterations
 
     Example:
-        curl -X POST http://localhost:3000/python/async/compute \\
+        curl -X POST http://localhost:3777/python/async/compute \\
              -H "Content-Type: application/json" \\
              -d '{"count": 1000000}'
     """
@@ -126,10 +126,10 @@ async def async_timeout(request: Request) -> dict:
         delay: Simulated operation delay (default: 2.0)
 
     Example (will timeout):
-        curl "http://localhost:3000/python/async/timeout?timeout=1&delay=2"
+        curl "http://localhost:3777/python/async/timeout?timeout=1&delay=2"
 
     Example (will succeed):
-        curl "http://localhost:3000/python/async/timeout?timeout=2&delay=1"
+        curl "http://localhost:3777/python/async/timeout?timeout=2&delay=1"
     """
     timeout = float(request.query_params.get('timeout', '1.0'))
     delay = float(request.query_params.get('delay', '2.0'))
